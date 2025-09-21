@@ -55,13 +55,8 @@ class SO101Env(MujocoEnv):
         """
         Applies an action to the environment.
         """
-        # Assume action is 6D positions; extend for full qpos if needed
-        joint_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, f"joint{i}") for i in range(6)]
-        self.data.qpos[self.model.jnt_qposadr[joint_ids]] = action
-        # Optional: Set velocities to zero or interpolate (e.g., diff from prev)
-        self.data.qvel[:6] = 0.0  # Or compute: (action - prev_action) / timestep
-        mujoco.mj_forward(self.model, self.data)  # Update kinematics (positions/orientations)
-        # Advance time manually if needed: self.simulate(self.timestep)
+        self.data.ctrl[:action.shape[0]] = action
+        mujoco.mj_step(self.model, self.data, nstep=self.frame_skip)
         observation = self._get_obs()
         reward = 0.0
         terminated = False
@@ -75,7 +70,7 @@ def main():
     parser.add_argument(
         "--actions-path",
         type=Path,
-        default="episode_0_states.npy",
+        default="episode_0_actions.npy",
         help="Path to the .npy file containing the actions.",
     )
     parser.add_argument(
@@ -101,24 +96,64 @@ def main():
     # Create the custom Gymnasium environment
     env = SO101Env(model_path=model_path, render_mode="rgb_array", camera_name="front_camera")
 
+    # Move the camera 30cm to the left
+    camera_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_CAMERA, "front_camera")
+    if camera_id != -1:
+        print("Moving camera to the left...")
+        # In MuJoCo's camera frame, +Y is typically to the left.
+        env.model.cam_pos[camera_id][0] -= 0.3
+    else:
+        print("Warning: Could not find camera named 'front_camera'.")
+
     # Wrap the environment to record a video
     video_name_prefix = f"replay_{args.actions_path.stem}"
     env = RecordVideo(env, str(args.video_folder), name_prefix=video_name_prefix)
 
-    # Run the simulation
+    # Run the simulation, starting from the specified neutral action
     observation, info = env.reset()
-    print(env.action_space)
-    n = 0
-    for action in actions:
-        n = n + 1
-        print("{} {}".format(n, action))
-        action = action / 100 * np.where(action > 0, env.action_space.high, -env.action_space.low)
-        print("{} {}".format(n, action))
-        observation, reward, terminated, truncated, info = env.step(action)
+
+    # Hold a neutral position
+    neutral_action = np.array([ 0.03755415, -1.7234037, 1.6718199, 1.2405578, -1.411793, 0.02459861])
+
+    # Set the initial state of the robot to the neutral action pose
+    neutral_qvel = np.zeros_like(neutral_action)
+    env.set_state(neutral_action, neutral_qvel)
+
+    # Hold the neutral position for a moment to stabilize before testing
+    for _ in range(100):
+        env.step(neutral_action)
+
+    max_steps_per_move = 500
+    movement_epsilon = 1e-3  # Stop if position change norm is less than this
+    num_joints = env.action_space.shape[0]
+
+    for i, action in enumerate(actions):
+        print(f"Executing action {i+1}/{len(actions)}...")
+        scaled_action = action / 100 * np.where(action > 0, env.action_space.high, -env.action_space.low)
+
+        previous_pos = np.full(num_joints, np.inf)
+        for step in range(max_steps_per_move):
+            observation, reward, terminated, truncated, info = env.step(scaled_action)
+            current_pos = observation[:num_joints]
+
+            # Check if the movement has stopped
+            norm = np.linalg.norm(current_pos - previous_pos)
+            if norm < movement_epsilon:
+                print(f"  Movement stabilized in {step + 1} steps.")
+                break
+
+            previous_pos = current_pos
+
+            if terminated or truncated:
+                print("  Episode terminated or truncated during action execution.")
+                break
+        else:
+            # This block executes if the for loop completes without a 'break'
+            print(f"  Warning: Action timed out after {max_steps_per_move} steps. Norm = {norm}")
 
         if terminated or truncated:
-            print("Episode terminated or truncated. Resetting environment.")
-            observation, info = env.reset()
+            print("Replay finished due to episode termination.")
+            break
 
     env.close()
 
