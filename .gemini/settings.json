@@ -1,0 +1,14 @@
+{
+  "selectedAuthType": "gemini-api-key",
+  "theme": "Atom One",
+  "preferredEditor": "vim",
+  "vimMode": true,
+  "showLineNumbers": false,
+  "telemetry": {
+    "enabled": true,
+    "logPrompts": true,
+    "target": "local",
+    "otlpEndpoint": "",
+    "outfile": ".gemini/telemetry.log"
+  }
+}
