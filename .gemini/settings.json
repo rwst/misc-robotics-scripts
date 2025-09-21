@@ -9,6 +9,6 @@
     "logPrompts": true,
     "target": "local",
     "otlpEndpoint": "",
-    "outfile": ".gemini/telemetry.log"
+    "outfile": "/home/ralf/misc-robotic-scripts/.gemini/telemetry.log"
   }
 }
