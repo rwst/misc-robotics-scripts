@@ -8,6 +8,7 @@ import mujoco
 from gymnasium import spaces
 from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.wrappers import RecordVideo
+from PIL import Image
 
 
 class SO101Env(MujocoEnv):
@@ -79,6 +80,11 @@ def main():
         default="../media",
         help="Path to the folder to save the video.",
     )
+    parser.add_argument(
+        "--start-image-only",
+        action="store_true",
+        help="Instead of writing a video, only write a snapshot image of the initial scene.",
+    )
     args = parser.parse_args()
 
     # Get the absolute path to the XML file
@@ -105,10 +111,6 @@ def main():
     else:
         print("Warning: Could not find camera named 'front_camera'.")
 
-    # Wrap the environment to record a video
-    video_name_prefix = f"replay_{args.actions_path.stem}"
-    env = RecordVideo(env, str(args.video_folder), name_prefix=video_name_prefix)
-
     # Run the simulation, starting from the specified neutral action
     observation, info = env.reset()
 
@@ -122,6 +124,21 @@ def main():
     # Hold the neutral position for a moment to stabilize before testing
     for _ in range(100):
         env.step(neutral_action)
+
+    if args.start_image_only:
+        print("Generating start image only...")
+        frame = env.render()
+        image = Image.fromarray(frame)
+        output_path = args.video_folder / f"replay_{args.actions_path.stem}_start.png"
+        args.video_folder.mkdir(parents=True, exist_ok=True)
+        image.save(output_path)
+        print(f"Start image saved to {output_path}")
+        env.close()
+        return
+
+    # Wrap the environment to record a video
+    video_name_prefix = f"replay_{args.actions_path.stem}"
+    env = RecordVideo(env, str(args.video_folder), name_prefix=video_name_prefix)
 
     max_steps_per_move = 500
     movement_epsilon = 1e-3  # Stop if position change norm is less than this
