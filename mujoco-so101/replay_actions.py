@@ -88,7 +88,7 @@ def main():
     args = parser.parse_args()
 
     # Get the absolute path to the XML file
-    model_path = os.path.join(os.path.dirname(__file__), "../so101-assets/so101_new_calib.xml")
+    model_path = os.path.join(os.path.dirname(__file__), "so101-assets/so101_new_calib.xml")
 
     # Load actions
     print(f"Loading actions from {args.actions_path}")
