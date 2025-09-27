@@ -88,7 +88,23 @@ def main():
         default="sim_output.png",
         help="Name of the output image file.",
     )
+    parser.add_argument(
+        "--yellow-cube-pos",
+        type=str,
+        default="0.3 -0.1 0.025",
+        help="Space-separated X Y Z position for yellow cube (default: '0.3 -0.1 0.025').",
+    )
+    parser.add_argument(
+        "--blue-tray-pos",
+        type=str,
+        default="0.1 0.3 0.01",
+        help="Space-separated X Y Z position for blue tray (default: '0.1 0.3 0.01').",
+    )
     args = parser.parse_args()
+
+    # Parse position strings
+    yellow_pos = np.fromstring(args.yellow_cube_pos, sep=' ')
+    blue_pos = np.fromstring(args.blue_tray_pos, sep=' ')
 
     model_path = args.model_path.resolve()
 
@@ -106,6 +122,28 @@ def main():
 
     # Run the simulation, starting from the specified neutral action
     observation, info = env.reset()
+
+    # Programmatically adjust object positions
+    # Find joint IDs
+    yellow_joint_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_JOINT, "yellow_cube/freejoint")
+    blue_joint_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_JOINT, "blue_tray/freejoint")
+
+    if yellow_joint_id != -1:
+        yellow_adr = env.model.jnt_qposadr[yellow_joint_id]
+        # Set new position (x, y, z); quaternion to identity
+        env.data.qpos[yellow_adr : yellow_adr + 3] = yellow_pos
+        env.data.qpos[yellow_adr + 3 : yellow_adr + 7] = [1.0, 0.0, 0.0, 0.0]
+        env.data.qvel[yellow_adr : yellow_adr + 6] = 0.0  # Zero velocities for stability
+
+    if blue_joint_id != -1:
+        blue_adr = env.model.jnt_qposadr[blue_joint_id]
+        # Set new position (x, y, z); quaternion to identity
+        env.data.qpos[blue_adr : blue_adr + 3] = blue_pos
+        env.data.qpos[blue_adr + 3 : blue_adr + 7] = [1.0, 0.0, 0.0, 0.0]
+        env.data.qvel[blue_adr : blue_adr + 6] = 0.0  # Zero velocities for stability
+
+    # Forward kinematics to update body positions
+    mujoco.mj_forward(env.model, env.data)
 
     # Hold a neutral position
     neutral_action = np.array([ 0.03755415, -1.7234037, 1.6718199, 1.2405578, -1.411793, 0.02459861])
