@@ -109,24 +109,15 @@ def main():
     model_path = args.model_path.resolve()
 
     # Create the custom Gymnasium environment
-    env = SO101Env(model_path=str(model_path), render_mode="rgb_array", camera_name="front_camera")
+    env = SO101Env(model_path=str(model_path), render_mode="rgb_array", camera_name="side_camera")
 
-    # Move the camera 30cm to the left
-    camera_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_CAMERA, "front_camera")
-    if camera_id != -1:
-        print("Moving camera to the left...")
-        # In MuJoCo's camera frame, +Y is typically to the left.
-        env.model.cam_pos[camera_id][0] -= 0.3
-    else:
-        print("Warning: Could not find camera named 'front_camera'.")
+    side_camera_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_CAMERA, "side_camera")
+    top_camera_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_CAMERA, "top_camera")
+    yellow_joint_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_JOINT, "yellow_cube/freejoint")
+    blue_joint_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_JOINT, "blue_tray/freejoint")
 
     # Run the simulation, starting from the specified neutral action
     observation, info = env.reset()
-
-    # Programmatically adjust object positions
-    # Find joint IDs
-    yellow_joint_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_JOINT, "yellow_cube/freejoint")
-    blue_joint_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_JOINT, "blue_tray/freejoint")
 
     if yellow_joint_id != -1:
         yellow_adr = env.model.jnt_qposadr[yellow_joint_id]
@@ -159,13 +150,18 @@ def main():
     for _ in range(100):
         env.step(neutral_action)
 
-    print("Generating start image...")
-    frame = env.render()
+    print("Generating start images...")
+    frame = env.mujoco_renderer.render(render_mode="rgb_array", camera_id=side_camera_id)
     image = Image.fromarray(frame)
-    output_path = args.media_folder / args.image_name
+    output_path = args.media_folder / ("side_" + args.image_name)
     args.media_folder.mkdir(parents=True, exist_ok=True)
     image.save(output_path)
-    print(f"Start image saved to {output_path}")
+    frame = env.mujoco_renderer.render(render_mode="rgb_array", camera_id=top_camera_id)
+    image = Image.fromarray(frame)
+    output_path = args.media_folder / ("top_" + args.image_name)
+    args.media_folder.mkdir(parents=True, exist_ok=True)
+    image.save(output_path)
+    print(f"Start images saved to media folder.")
     env.close()
 
 
