@@ -102,6 +102,8 @@ def main():
     )
     args = parser.parse_args()
 
+    print(f"MuJoCo version: {mujoco.__version__}")
+
     # Parse position strings
     yellow_pos = np.fromstring(args.yellow_cube_pos, sep=' ')
     blue_pos = np.fromstring(args.blue_tray_pos, sep=' ')
