@@ -47,7 +47,7 @@
     </body>
 
     <!-- Cameras for sensors (must be inside <worldbody>) -->
-    <camera name="side_camera" pos="0.2 -0.5 0.4" euler="0.9 0 0" mode="fixed" resolution="640 480"/>
+    <camera name="side_camera" pos="0.2 -0.5 0.4" mode="fixed" resolution="640 480"/>
     <camera name="top_camera" pos="0.3 0 1" mode="fixed" resolution="640 480"/>
   </worldbody>
 

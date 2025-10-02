@@ -191,65 +191,10 @@ def randomize(env, yellow_adr, blue_adr, side_camera_id, top_camera_id):
     new_cam_pos_y = cam_dist * np.sin(camera_angle)
     new_cam_pos = np.array([new_cam_pos_x, new_cam_pos_y, cam_Cz])
 
-    # Orient towards arm position (A_x, A_y), target Z at arm base height (0.5 from XML)
-    target_pos = np.array([A_x, A_y, 0.5]) # (0, 0, 0.5)
+    # Orient towards position (A_x, A_y, 0),
+    target_pos = np.array([A_x, A_y, 0]) # (0, 0, 0)
 
-    # Calculate camera orientation using a standard "look-at" algorithm (OpenGL style)
-    # 1. Camera's local Z-axis (pointing into the scene, from camera to target)
-    forward_direction = target_pos - new_cam_pos
-    forward_direction = forward_direction / np.linalg.norm(forward_direction)
-
-    # 2. World "up" vector (reference for camera's up)
-    world_up_ref = np.array([0.0, 0.0, 1.0])
-
-    # 3. Camera's local X-axis (right vector)
-    # Right = cross(Forward, WorldUpRef)
-    camera_x_axis = np.cross(forward_direction, world_up_ref)
-
-    # Handle cases where forward_direction is parallel to world_up_ref (looking straight up/down)
-    if np.linalg.norm(camera_x_axis) < 1e-6:
-        # If looking straight up/down, X-axis can be aligned with world Y-axis (or -Y)
-        # to ensure it's orthogonal to world Z and allows cross product to proceed.
-        # This choice is arbitrary but consistent.
-        camera_x_axis = np.array([0.0, 1.0, 0.0]) if forward_direction[2] > 0 else np.array([0.0, -1.0, 0.0])
-    camera_x_axis = camera_x_axis / np.linalg.norm(camera_x_axis)
-
-    # 4. Camera's local Y-axis (actual up vector)
-    # Up = cross(Right, Forward)
-    camera_y_axis = np.cross(camera_x_axis, forward_direction)
-    camera_y_axis = camera_y_axis / np.linalg.norm(camera_y_axis)
-
-    # Construct rotation matrix where columns are the camera's local X, Y, Z axes in world coordinates
-    # MuJoCo's mju_mat2Quat expects a rotation matrix R such that
-    # R * [1,0,0]^T = X_axis_in_world
-    # R * [0,1,0]^T = Y_axis_in_world
-    # R * [0,0,1]^T = Z_axis_in_world
-    rotation_matrix = np.array([camera_x_axis, camera_y_axis, forward_direction]).T
-    
-    # Store the forward_direction for later printing the angle vs x-axis
-    forward_vec = forward_direction
-
-    # Calculate base quaternion from look-at matrix
-    base_cam_quat = np.zeros(4)
-    mujoco.mju_mat2Quat(base_cam_quat, rotation_matrix.flatten()) # MuJoCo expects flattened 3x3
-
-    # Apply additional roll from XML (0.9 radians around local X-axis)
-    # The XML has euler="0.9 0 0", which is a roll around the camera's local X-axis.
-    # We need to create a quaternion for this roll and then multiply it.
-    roll_angle = 0.9 # radians from XML
-    roll_axis_quat = np.zeros(4)
-    # Axis-angle for roll: axis is local X ([1,0,0]), angle is 0.9
-    mujoco.mju_axisAngle2Quat(roll_axis_quat, np.array([1.0, 0.0, 0.0]), roll_angle)
-
-    # Multiply quaternions: apply roll AFTER the look-at orientation.
-    # mju_mulQuat(qa, qb) computes rotation qa * qb.
-    # If qb defines rotation of frame B relative to A, and qa defines rotation of frame A relative to C,
-    # then qa * qb defines rotation of frame B relative to C.
-    # Here, base_cam_quat defines global_from_camera_without_roll.
-    # roll_axis_quat defines camera_without_roll_from_camera_with_roll.
-    # We want global_from_camera_with_roll = global_from_camera_without_roll * camera_without_roll_from_camera_with_roll
-    new_cam_quat = np.zeros(4)
-    mujoco.mju_mulQuat(new_cam_quat, base_cam_quat, roll_axis_quat)
+    new_cam_quat = get_cam_orientation(new_cam_pos, target_pos)
 
     # Apply to model if side_camera ID exists
     if side_camera_id != -1:
