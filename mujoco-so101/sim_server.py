@@ -67,6 +67,209 @@ class SO101Env(MujocoEnv):
         info = {}
         return observation, reward, terminated, truncated, info
 
+def check_aabb_overlap(pos1_xy, size1_wh, pos2_xy, size2_wh):
+    """
+    Checks for Axis-Aligned Bounding Box (AABB) overlap between two rectangles
+    defined by their center positions and full sizes (width, height).
+    """
+    half_s1_x, half_s1_y = size1_wh[0] / 2, size1_wh[1] / 2
+    half_s2_x, half_s2_y = size2_wh[0] / 2, size2_wh[1] / 2
+
+    min_x1, max_x1 = pos1_xy[0] - half_s1_x, pos1_xy[0] + half_s1_x
+    min_y1, max_y1 = pos1_xy[1] - half_s1_y, pos1_xy[1] + half_s1_y
+    min_x2, max_x2 = pos2_xy[0] - half_s2_x, pos2_xy[0] + half_s2_x
+    min_y2, max_y2 = pos2_xy[1] - half_s2_y, pos2_xy[1] + half_s2_y
+
+    return (max_x1 > min_x2 and min_x1 < max_x2 and
+            max_y1 > min_y2 and min_y1 < max_y2)
+
+def randomize(env, yellow_adr, blue_adr, side_camera_id, top_camera_id):
+    """
+    Randomizes the positions and orientations of the yellow cube and blue tray
+    within a defined sandbox, checking for overlaps, and adjusts the side camera.
+    """
+    # Constants from the problem description
+    d = 0.4
+    A_w, A_h = 0.05, 0.05  # Arm base dimensions (full width, height)
+    s_w, s_h = 0.02, 0.01  # Yellow cube dimensions (full width, height)
+    S_w, S_h = 0.1, 0.15  # Blue tray dimensions (full width, height)
+
+    # Sandbox dimensions based on document defaults
+    # Arm is at (A_x, A_y) = (0,0), O_w = d, O_h = 2d
+    O_w = d
+    O_h = 2 * d
+    # lower left corner of sandbox is (O_x=0, O_y=-O_h/2)
+    O_x = 0
+    O_y = -O_h / 2
+
+    # Arm base position (center)
+    A_x, A_y = 0, 0
+    arm_base_pos_xy = np.array([A_x, A_y])
+    arm_base_size_wh = np.array([A_w, A_h])
+
+    # Object Z-heights from XML (fixed, assuming they are consistent)
+    S_z = 0.01  # Blue tray Z position
+    s_z = 0.025 # Yellow cube Z position
+
+    tray_placed = False
+    while not tray_placed:
+        # 2. compute random tray position (S_x,S_y) within sandbox with random orientation Sigma
+        # Calculate bounds for tray center to ensure its center is within sandbox
+        tray_min_center_x = O_x
+        tray_max_center_x = O_x + O_w
+        tray_min_center_y = O_y
+        tray_max_center_y = O_y + O_h
+
+        S_x = np.random.uniform(tray_min_center_x, tray_max_center_x)
+        S_y = np.random.uniform(tray_min_center_y, tray_max_center_y)
+        Sigma = np.random.uniform(-np.pi, np.pi)  # Random orientation (radians)
+
+        tray_pos_xy = np.array([S_x, S_y])
+        tray_size_wh = np.array([S_w, S_h]) # Using nominal size for AABB overlap check
+
+        # 3. if tray overlaps arm base, reset and go to 1
+        if check_aabb_overlap(tray_pos_xy, tray_size_wh, arm_base_pos_xy, arm_base_size_wh):
+            continue # Retry tray placement
+
+        # Store tentative tray placement data (x, y, z, qw, qx, qy, qz)
+        qpos_tray_rot = np.zeros(4)
+        mujoco.mju_axisAngle2Quat(qpos_tray_rot, np.array([0, 0, 1]), Sigma) # Rotate around Z-axis
+        blue_tray_qpos = np.array([S_x, S_y, S_z, qpos_tray_rot[0], qpos_tray_rot[1], qpos_tray_rot[2], qpos_tray_rot[3]])
+
+        cube_placed = False
+        while not cube_placed:
+            # 4. compute random cube position (s_x,s_y) within sandbox with random orientation sigma
+            cube_min_center_x = O_x
+            cube_max_center_x = O_x + O_w
+            cube_min_center_y = O_y
+            cube_max_center_y = O_y + O_h
+
+            s_x = np.random.uniform(cube_min_center_x, cube_max_center_x)
+            s_y = np.random.uniform(cube_min_center_y, cube_max_center_y)
+            sigma = np.random.uniform(-np.pi, np.pi)  # Random orientation (radians)
+
+            cube_pos_xy = np.array([s_x, s_y])
+            cube_size_wh = np.array([s_w, s_h]) # Using nominal size for AABB overlap check
+
+            # 5. if cube overlaps tray or arm base, go to 3 (reset tray)
+            if check_aabb_overlap(cube_pos_xy, cube_size_wh, arm_base_pos_xy, arm_base_size_wh) or \
+               check_aabb_overlap(cube_pos_xy, cube_size_wh, tray_pos_xy, tray_size_wh):
+                # Cube overlaps, so we need to restart the whole process from tray placement
+                tray_placed = False
+                break # Break inner loop, outer loop will re-evaluate tray_placed
+            else:
+                cube_placed = True
+                qpos_cube_rot = np.zeros(4)
+                mujoco.mju_axisAngle2Quat(qpos_cube_rot, np.array([0, 0, 1]), sigma)
+                yellow_cube_qpos = np.array([s_x, s_y, s_z, qpos_cube_rot[0], qpos_cube_rot[1], qpos_cube_rot[2], qpos_cube_rot[3]])
+
+        # If inner loop broke because cube couldn't be placed, restart outer loop
+        if not cube_placed:
+            continue
+
+        # If we reached here, both tray and cube are placed without overlap
+        tray_placed = True # Confirm tray and cube are successfully placed
+
+        # Update environment's qpos for the objects
+        qpos_copy = env.data.qpos.copy()
+        # Free joint qpos is 7 values (x,y,z,qw,qx,qy,qz)
+        if blue_adr != -1: # Ensure joint exists
+            qpos_copy[blue_adr : blue_adr + 7] = blue_tray_qpos
+        if yellow_adr != -1: # Ensure joint exists
+            qpos_copy[yellow_adr : yellow_adr + 7] = yellow_cube_qpos
+        env.set_state(qpos_copy, env.data.qvel.copy())
+
+
+    # 6. set the side_camera position
+    # C_z=0.4, distance 2d from arm, on half circle x>0, oriented towards (A_x,A_y)
+    cam_Cz = 0.4
+    cam_dist = 2 * d # distance from arm (A_x, A_y)
+
+    # Generate a random angle for the half-circle x > 0 (from -pi/2 to pi/2)
+    camera_angle = np.random.uniform(-np.pi / 2, np.pi / 2)
+    new_cam_pos_x = cam_dist * np.cos(camera_angle)
+    new_cam_pos_y = cam_dist * np.sin(camera_angle)
+    new_cam_pos = np.array([new_cam_pos_x, new_cam_pos_y, cam_Cz])
+
+    # Orient towards arm position (A_x, A_y), target Z at arm base height (0.5 from XML)
+    target_pos = np.array([A_x, A_y, 0.5]) # (0, 0, 0.5)
+
+    # Calculate camera orientation using a standard "look-at" algorithm (OpenGL style)
+    # 1. Camera's local Z-axis (pointing into the scene, from camera to target)
+    forward_direction = target_pos - new_cam_pos
+    forward_direction = forward_direction / np.linalg.norm(forward_direction)
+
+    # 2. World "up" vector (reference for camera's up)
+    world_up_ref = np.array([0.0, 0.0, 1.0])
+
+    # 3. Camera's local X-axis (right vector)
+    # Right = cross(Forward, WorldUpRef)
+    camera_x_axis = np.cross(forward_direction, world_up_ref)
+
+    # Handle cases where forward_direction is parallel to world_up_ref (looking straight up/down)
+    if np.linalg.norm(camera_x_axis) < 1e-6:
+        # If looking straight up/down, X-axis can be aligned with world Y-axis (or -Y)
+        # to ensure it's orthogonal to world Z and allows cross product to proceed.
+        # This choice is arbitrary but consistent.
+        camera_x_axis = np.array([0.0, 1.0, 0.0]) if forward_direction[2] > 0 else np.array([0.0, -1.0, 0.0])
+    camera_x_axis = camera_x_axis / np.linalg.norm(camera_x_axis)
+
+    # 4. Camera's local Y-axis (actual up vector)
+    # Up = cross(Right, Forward)
+    camera_y_axis = np.cross(camera_x_axis, forward_direction)
+    camera_y_axis = camera_y_axis / np.linalg.norm(camera_y_axis)
+
+    # Construct rotation matrix where columns are the camera's local X, Y, Z axes in world coordinates
+    # MuJoCo's mju_mat2Quat expects a rotation matrix R such that
+    # R * [1,0,0]^T = X_axis_in_world
+    # R * [0,1,0]^T = Y_axis_in_world
+    # R * [0,0,1]^T = Z_axis_in_world
+    rotation_matrix = np.array([camera_x_axis, camera_y_axis, forward_direction]).T
+    
+    # Store the forward_direction for later printing the angle vs x-axis
+    forward_vec = forward_direction
+
+    # Calculate base quaternion from look-at matrix
+    base_cam_quat = np.zeros(4)
+    mujoco.mju_mat2Quat(base_cam_quat, rotation_matrix.flatten()) # MuJoCo expects flattened 3x3
+
+    # Apply additional roll from XML (0.9 radians around local X-axis)
+    # The XML has euler="0.9 0 0", which is a roll around the camera's local X-axis.
+    # We need to create a quaternion for this roll and then multiply it.
+    roll_angle = 0.9 # radians from XML
+    roll_axis_quat = np.zeros(4)
+    # Axis-angle for roll: axis is local X ([1,0,0]), angle is 0.9
+    mujoco.mju_axisAngle2Quat(roll_axis_quat, np.array([1.0, 0.0, 0.0]), roll_angle)
+
+    # Multiply quaternions: apply roll AFTER the look-at orientation.
+    # mju_mulQuat(qa, qb) computes rotation qa * qb.
+    # If qb defines rotation of frame B relative to A, and qa defines rotation of frame A relative to C,
+    # then qa * qb defines rotation of frame B relative to C.
+    # Here, base_cam_quat defines global_from_camera_without_roll.
+    # roll_axis_quat defines camera_without_roll_from_camera_with_roll.
+    # We want global_from_camera_with_roll = global_from_camera_without_roll * camera_without_roll_from_camera_with_roll
+    new_cam_quat = np.zeros(4)
+    mujoco.mju_mulQuat(new_cam_quat, base_cam_quat, roll_axis_quat)
+
+    # Apply to model if side_camera ID exists
+    if side_camera_id != -1:
+        env.model.cam_pos[side_camera_id] = new_cam_pos
+        env.model.cam_quat[side_camera_id] = new_cam_quat
+
+    print(f"Randomized Yellow Cube Position (x, y, z): ({yellow_cube_qpos[0]:.3f}, {yellow_cube_qpos[1]:.3f}, {yellow_cube_qpos[2]:.3f})")
+    print(f"Randomized Yellow Cube Angle (rad vs x-axis): {sigma:.3f}")
+    print(f"Randomized Blue Tray Position (x, y, z): ({blue_tray_qpos[0]:.3f}, {blue_tray_qpos[1]:.3f}, {blue_tray_qpos[2]:.3f})")
+    print(f"Randomized Blue Tray Angle (rad vs x-axis): {Sigma:.3f}")
+
+    if side_camera_id != -1:
+        # Calculate camera's angle vs x-axis from its forward vector
+        # The forward vector is pointing from the camera towards the target.
+        # Its projection onto the XY plane is used for the angle.
+        camera_forward_xy_angle = np.arctan2(forward_vec[1], forward_vec[0])
+        print(f"Randomized Side Camera Position (x, y, z): ({new_cam_pos[0]:.3f}, {new_cam_pos[1]:.3f}, {new_cam_pos[2]:.3f})")
+        print(f"Randomized Side Camera Quat (w,x,y,z): ({new_cam_quat[0]:.3f}, {new_cam_quat[1]:.3f}, {new_cam_quat[2]:.3f}, {new_cam_quat[3]:.3f})")
+        
+        print(f"Randomized Side Camera Angle (rad vs x-axis): {camera_forward_xy_angle:.3f}")
 
 def main():
     parser = argparse.ArgumentParser(description="Set up a MuJoCo environment and save a snapshot image.")
@@ -89,24 +292,14 @@ def main():
         help="Name of the output image file.",
     )
     parser.add_argument(
-        "--yellow-cube-pos",
-        type=str,
-        default="0.3 -0.1 0.025",
-        help="Space-separated X Y Z position for yellow cube (default: '0.3 -0.1 0.025').",
-    )
-    parser.add_argument(
-        "--blue-tray-pos",
-        type=str,
-        default="0.1 0.3 0.01",
-        help="Space-separated X Y Z position for blue tray (default: '0.1 0.3 0.01').",
+        "--random",
+        action="store_true",
+        default=False,
+        help="If set, randomize object positions (default: False).",
     )
     args = parser.parse_args()
 
     print(f"MuJoCo version: {mujoco.__version__}")
-
-    # Parse position strings
-    yellow_pos = np.fromstring(args.yellow_cube_pos, sep=' ')
-    blue_pos = np.fromstring(args.blue_tray_pos, sep=' ')
 
     model_path = args.model_path.resolve()
 
@@ -115,25 +308,23 @@ def main():
 
     side_camera_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_CAMERA, "side_camera")
     top_camera_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_CAMERA, "top_camera")
-    yellow_joint_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_JOINT, "yellow_cube/freejoint")
-    blue_joint_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_JOINT, "blue_tray/freejoint")
+    yellow_joint_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_JOINT, "yellow_cube_to_world")
+    blue_joint_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_JOINT, "blue_tray_to_world")
 
     # Run the simulation, starting from the specified neutral action
     observation, info = env.reset()
 
+    yellow_adr = -1
+    blue_adr = -1
+
     if yellow_joint_id != -1:
         yellow_adr = env.model.jnt_qposadr[yellow_joint_id]
-        # Set new position (x, y, z); quaternion to identity
-        env.data.qpos[yellow_adr : yellow_adr + 3] = yellow_pos
-        env.data.qpos[yellow_adr + 3 : yellow_adr + 7] = [1.0, 0.0, 0.0, 0.0]
-        env.data.qvel[yellow_adr : yellow_adr + 6] = 0.0  # Zero velocities for stability
 
     if blue_joint_id != -1:
         blue_adr = env.model.jnt_qposadr[blue_joint_id]
-        # Set new position (x, y, z); quaternion to identity
-        env.data.qpos[blue_adr : blue_adr + 3] = blue_pos
-        env.data.qpos[blue_adr + 3 : blue_adr + 7] = [1.0, 0.0, 0.0, 0.0]
-        env.data.qvel[blue_adr : blue_adr + 6] = 0.0  # Zero velocities for stability
+
+    if args.random:
+        randomize(env, yellow_adr, blue_adr, side_camera_id, top_camera_id)
 
     # Forward kinematics to update body positions
     mujoco.mj_forward(env.model, env.data)
