@@ -83,6 +83,32 @@ def check_aabb_overlap(pos1_xy, size1_wh, pos2_xy, size2_wh):
     return (max_x1 > min_x2 and min_x1 < max_x2 and
             max_y1 > min_y2 and min_y1 < max_y2)
 
+def get_cam_orientation(cam_pos, target_pos):
+    """
+    Computes the quaternion orientation for the camera to look towards the target position.
+    
+    :param cam_pos: numpy array of shape (3,) for camera position [x, y, z]
+    :param target_pos: numpy array of shape (3,) for target position [x, y, z]
+    :return: numpy array of shape (4,) for quaternion [w, x, y, z]
+    """
+    fwd_dir = target_pos - cam_pos
+    fwd_dir = fwd_dir / np.linalg.norm(fwd_dir)
+    
+    Z = -fwd_dir
+    world_up = np.array([0.0, 0.0, 1.0])
+    
+    X = np.cross(world_up, Z)
+    X = X / np.linalg.norm(X)
+    
+    Y = np.cross(Z, X)
+    
+    mat = np.column_stack((X, Y, Z))
+    
+    quat = np.zeros(4)
+    mujoco.mju_mat2Quat(quat, mat.flatten())
+    
+    return quat
+
 def randomize(env, yellow_adr, blue_adr, side_camera_id, top_camera_id):
     """
     Randomizes the positions and orientations of the yellow cube and blue tray
@@ -207,14 +233,9 @@ def randomize(env, yellow_adr, blue_adr, side_camera_id, top_camera_id):
     print(f"Randomized Blue Tray Angle (rad vs x-axis): {Sigma:.3f}")
 
     if side_camera_id != -1:
-        # Calculate camera's angle vs x-axis from its forward vector
-        # The forward vector is pointing from the camera towards the target.
-        # Its projection onto the XY plane is used for the angle.
-        camera_forward_xy_angle = np.arctan2(forward_vec[1], forward_vec[0])
         print(f"Randomized Side Camera Position (x, y, z): ({new_cam_pos[0]:.3f}, {new_cam_pos[1]:.3f}, {new_cam_pos[2]:.3f})")
         print(f"Randomized Side Camera Quat (w,x,y,z): ({new_cam_quat[0]:.3f}, {new_cam_quat[1]:.3f}, {new_cam_quat[2]:.3f}, {new_cam_quat[3]:.3f})")
         
-        print(f"Randomized Side Camera Angle (rad vs x-axis): {camera_forward_xy_angle:.3f}")
 
 def main():
     parser = argparse.ArgumentParser(description="Set up a MuJoCo environment and save a snapshot image.")
