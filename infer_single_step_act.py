@@ -1,3 +1,4 @@
+import time
 from draccus import field, wrap
 from typing import Dict, Any
 from dataclasses import dataclass
@@ -152,15 +153,19 @@ def infer_single_step(cfg: InferSingleStepConfig):
 
     # 3. Run inference
     with torch.no_grad():
+        start_time = time.time()
         action_prediction = policy.select_action(dummy_obs)
+        end_time = time.time()
+        inference_time_ms = (end_time - start_time) * 1000
 
     # 4. Display results
     print("\n--- Inference Result ---")
+    print(f"Inference Time: {inference_time_ms:.2f} ms")
     print(f"Predicted Action Type: {type(action_prediction)}")
 
     if isinstance(action_prediction, torch.Tensor):
         print(f"Predicted Action Shape: {tuple(action_prediction.shape)}")
-        print(f"Predicted Action (first 5 values): {action_prediction.flatten()[:5].tolist()}")
+        print(f"Predicted Action: {action_prediction.flatten().tolist()}")
     else:
         print(f"Predicted Action Content: {action_prediction}")
 
