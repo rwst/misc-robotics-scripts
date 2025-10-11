@@ -11,6 +11,13 @@ from lerobot.envs.configs import EnvConfig
 import torch
 from gymnasium.spaces import Box, Space
 
+"""
+This script needs a version of lerobot where the pull request
+https://github.com/huggingface/lerobot/pull/1771
+is merged, or the issue is fixed by similar means.
+"""
+
+
 @dataclass
 class DummyEnvConfig(EnvConfig):
     """A concrete EnvConfig for dummy environments that does not require gym registration."""
