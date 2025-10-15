@@ -9,6 +9,7 @@ from lerobot.configs.policies import PreTrainedConfig
 from lerobot.policies.smolvla.processor_smolvla import make_smolvla_pre_post_processors
 from gymnasium.spaces import Box, Dict, Space
 from gymnasium.envs.mujoco import MujocoEnv
+from transformers import AutoTokenizer
 
 # --- Configuration ---
 # TODO: Replace with your specific Hugging Face repository IDs.
@@ -134,6 +135,9 @@ def main():
     pre_processor, post_processor = make_smolvla_pre_post_processors(config=policy_cfg)
     policy.eval()
 
+    # Manually initialize the tokenizer.
+    tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/llama-tokenizer")
+
     # 5. Run the inference loop.
     obs, info = env.reset()
     terminated = truncated = False
@@ -151,6 +155,13 @@ def main():
 
             # b. Pre-process the observation, bypassing the batch converter.
             processed_batch = pre_processor._forward(input_data)
+
+            # Manually tokenize the instruction and add it to the batch.
+            tokenized_instruction = tokenizer(INSTRUCTION, return_tensors="pt")
+            processed_batch["observation"]["language"] = {
+                "tokens": tokenized_instruction["input_ids"],
+                "attention_mask": tokenized_instruction["attention_mask"].bool(),
+            }
 
             # Manually convert to tensor, add a batch dimension, and permute channels for the image.
             # The policy expects (b, c, h, w), but the output is (h, w, c).
@@ -173,8 +184,8 @@ def main():
                 action_prediction = policy.select_action(flat_batch)
 
             # d. Post-process the action.
-            action_processed = post_processor({"action": action_prediction})
-            action_env = action_processed["action"]
+            action_tensor = post_processor(action_prediction)
+            action_env = action_tensor[0]
 
             # e. Step the environment.
             obs, reward, terminated, truncated, info = env.step(action_env.cpu().numpy())
