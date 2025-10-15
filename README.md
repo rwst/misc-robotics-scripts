@@ -65,7 +65,7 @@ Single-step inference complete.
 
 
 ### `infer_single_step_smolvla.py`
-Single-step an ACT model with random input
+Single-step a SmolVLA model with random input
 
 ```
 python infer_single_step_smolvla.py 
