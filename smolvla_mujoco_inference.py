@@ -1,12 +1,14 @@
-import os, torch
+import os, torch, argparse
 import numpy as np
 import mujoco
+from pathlib import Path
 from dataclasses import dataclass
 from lerobot.datasets.utils import flatten_dict
 from lerobot.envs.configs import EnvConfig
 from lerobot.policies.factory import make_policy
 from lerobot.configs.policies import PreTrainedConfig
 from lerobot.policies.smolvla.processor_smolvla import make_smolvla_pre_post_processors
+from gymnasium.wrappers import RecordVideo
 from gymnasium.spaces import Box, Dict, Space
 from gymnasium.envs.mujoco import MujocoEnv
 from transformers import AutoTokenizer
@@ -108,6 +110,15 @@ def main():
     This script demonstrates how to use a pre-trained SmolVLA policy and its
     associated processors to run inference in a custom MuJoCo environment.
     """
+    parser = argparse.ArgumentParser(description="Replay actions from a .npy file in Mujoco and record a video.")
+    parser.add_argument(
+        "--video-folder",
+        type=Path,
+        default="../media",
+        help="Path to the folder to save the video.",
+    )
+    args = parser.parse_args()
+
     print(f"Loading policy from: {POLICY_REPO_ID}")
     device = "cpu"
 
@@ -125,6 +136,21 @@ def main():
         control_freq=env.metadata["render_fps"],
     )
 
+    # Hold a neutral position
+    neutral_action = np.array([ 0.03755415, -1.7234037, 1.6718199, 1.2405578, -1.411793, 0.02459861])
+
+    # Set the initial state of the robot to the neutral action pose
+    neutral_qvel = np.zeros_like(neutral_action)
+    env.set_state(neutral_action, neutral_qvel)
+
+    # Hold the neutral position for a moment to stabilize before running
+    for _ in range(100):
+        env.step(neutral_action)
+
+    # Wrap the environment to record a video
+    video_name_prefix = "rec"
+    env = RecordVideo(env, str(args.video_folder), name_prefix=video_name_prefix)
+
     # 3. Load the policy configuration from the Hugging Face Hub.
     policy_cfg = PreTrainedConfig.from_pretrained(POLICY_REPO_ID)
     policy_cfg.pretrained_path = POLICY_REPO_ID
@@ -141,10 +167,13 @@ def main():
     # 5. Run the inference loop.
     obs, info = env.reset()
     terminated = truncated = False
+    step = 0
 
     print("Starting inference loop. Press Ctrl+C to exit.")
     try:
         while not terminated and not truncated:
+            print("Step: {}".format(step))
+            step = step + 1
             # a. Prepare the input for the pre-processor.
             # The pre-processor's _forward method expects a dictionary that looks like a Transition object.
             input_data = {
@@ -173,8 +202,6 @@ def main():
             # Also convert the state to a batched tensor.
             state_array = processed_batch["observation"]["state"]
             processed_batch["observation"]["state"] = torch.from_numpy(state_array).unsqueeze(0).float()
-
-            print(processed_batch)
 
             # c. Get the action from the policy.
             with torch.no_grad():
