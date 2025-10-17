@@ -6,6 +6,11 @@
 
 ## Folder `mujoco-so101`
 * `so101-manual.py`: short manual action as proof of concept
+* `export_state_data.py`: Export state data for a given episode from a LeRobotDataset to a numpy file.
+* `export_action_data.py`: Export action data for a given episode from a LeRobotDataset to a numpy file.
+* `test_actuators.py`: Test SO101 actuators by moving them sequentially and record a video.
+* `replay_actions.py`: Replay actions w/o objects from a .npy file in Mujoco/SO101 and record a video.
+* `sim_server.py`: Set up Mujoco/SO101 with random objects / camera and make a picture.
 
 ## Scripts
 
