@@ -10,8 +10,8 @@
   <asset>
     <texture type="skybox" builtin="gradient" rgb1="0.6 0.6 0.6" rgb2="0 0 0" width="512" height="512"/>
     <material name="gray" rgba="0.5 0.5 0.5 1"/>
-    <material name="yellow" rgba=".7 .7 0 1"/>
-    <material name="blue" rgba="0 0.5 1 1"/>
+    <material name="object1_material" rgba=".7 .7 0 1"/>
+    <material name="object2_material" rgba="0 0.5 1 1"/>
   </asset>
 
   <worldbody>
@@ -27,17 +27,17 @@
       <inertial pos="0 0 0" mass="10.0" diaginertia="1.0 1.0 0.01"/>
     </body>
 
-    <!-- Yellow Cube -->
-    <body name="yellow_cube" pos="0.15 -0.15 0.025">
-      <joint name="yellow_cube_to_world" type="free" damping="0.01"/>
-      <geom type="box" size="0.01 0.02 0.01" material="yellow" name="yellow_cube_visual_geom" contype="1" conaffinity="1"/>
+    <!-- Object 1 -->
+    <body name="object1" pos="0.15 -0.15 0.025">
+      <joint name="object1_to_world" type="free" damping="0.01"/>
+      <geom type="box" size="0.01 0.02 0.01" material="object1_material" name="object1_visual_geom" contype="1" conaffinity="1"/>
       <inertial pos="0 0 0" mass="0.1" diaginertia="0.0001 0.0001 0.0001"/>
     </body>
 
-    <!-- Blue Tray -->
-    <body name="blue_tray" pos="0.2 0.2 0.01">
-      <joint name="blue_tray_to_world" type="free" damping="0.01"/>
-      <geom type="box" size="0.1 0.15 0.01" material="blue" name="blue_tray_visual_geom" contype="1" conaffinity="1"/>
+    <!-- Object 2 -->
+    <body name="object2" pos="0.2 0.2 0.01">
+      <joint name="object2_to_world" type="free" damping="0.01"/>
+      <geom type="box" size="0.1 0.15 0.01" material="object2_material" name="object2_visual_geom" contype="1" conaffinity="1"/>
       <inertial pos="0 0 0" mass="0.2" diaginertia="0.001 0.001 0.0001"/>
     </body>
 
@@ -47,8 +47,8 @@
     </body>
 
     <!-- Cameras for sensors (must be inside <worldbody>) -->
-    <camera name="side_camera" pos="0.2 -0.5 0.4" mode="fixed" resolution="640 480"/>
-    <camera name="top_camera" pos="0.3 0 1" mode="fixed" resolution="640 480"/>
+    <camera name="side_camera" pos="0.2 -0.5 0.4" mode="fixed"/>
+    <camera name="top_camera" pos="0.3 0 1" mode="fixed"/>
   </worldbody>
 
   <option gravity="0 0 -9.81" viscosity="0.0001"/>
