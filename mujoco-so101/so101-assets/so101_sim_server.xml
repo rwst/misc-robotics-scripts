@@ -1,0 +1,55 @@
+<?xml version="1.0" ?>
+<mujoco>
+  <compiler meshdir="assets"/>
+  <include file="so101_new_calib.xml"/>
+
+  <visual>
+    <headlight ambient="0.3 0.3 0.3" diffuse="0.4 0.4 0.4" specular="0.1 0.1 0.1"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.6 0.6 0.6" rgb2="0 0 0" width="512" height="512"/>
+    <material name="gray" rgba="0.5 0.5 0.5 1"/>
+    <material name="yellow" rgba=".7 .7 0 1"/>
+    <material name="blue" rgba="0 0.5 1 1"/>
+  </asset>
+
+  <worldbody>
+    <!-- Placeholder for SO101 robot base (expand with included file) -->
+    <body name="so101_base" pos="0 0 0.5">
+      <geom type="box" size="0.05 0.05 0.05" material="gray" name="so101_base_visual_geom" contype="1" conaffinity="1"/>
+      <inertial pos="0 0 0" mass="1.0" diaginertia="0.1 0.1 0.1"/>
+    </body>
+
+    <!-- Table -->
+    <body name="table" pos="0 0 0">
+      <geom type="box" size="1.0 1.0 0.01" material="gray" name="table_visual_geom" pos="0 0 -0.01" contype="1" conaffinity="1"/>
+      <inertial pos="0 0 0" mass="10.0" diaginertia="1.0 1.0 0.01"/>
+    </body>
+
+    <!-- Yellow Cube -->
+    <body name="yellow_cube" pos="0.15 -0.15 0.025">
+      <joint name="yellow_cube_to_world" type="free" damping="0.01"/>
+      <geom type="box" size="0.01 0.02 0.01" material="yellow" name="yellow_cube_visual_geom" contype="1" conaffinity="1"/>
+      <inertial pos="0 0 0" mass="0.1" diaginertia="0.0001 0.0001 0.0001"/>
+    </body>
+
+    <!-- Blue Tray -->
+    <body name="blue_tray" pos="0.2 0.2 0.01">
+      <joint name="blue_tray_to_world" type="free" damping="0.01"/>
+      <geom type="box" size="0.1 0.15 0.01" material="blue" name="blue_tray_visual_geom" contype="1" conaffinity="1"/>
+      <inertial pos="0 0 0" mass="0.2" diaginertia="0.001 0.001 0.0001"/>
+    </body>
+
+    <!-- Lighting for visible sensor images -->
+    <body>
+        <light pos="2 2 2" dir="-1 -1 -1" diffuse="0.4 0.4 0.4" ambient="0.2 0.2 0.2" directional="true" castshadow="true"/>
+    </body>
+
+    <!-- Cameras for sensors (must be inside <worldbody>) -->
+    <camera name="side_camera" pos="0.2 -0.5 0.4" mode="fixed" resolution="640 480"/>
+    <camera name="top_camera" pos="0.3 0 1" mode="fixed" resolution="640 480"/>
+  </worldbody>
+
+  <option gravity="0 0 -9.81" viscosity="0.0001"/>
+</mujoco>
