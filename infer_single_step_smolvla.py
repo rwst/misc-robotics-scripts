@@ -14,6 +14,9 @@ import torch
 from gymnasium.spaces import Box, Space
 
 
+# The upstream config for smolvla has device="cuda:0" which causes a validation error
+# in the version of lerobot being used.
+
 @dataclass
 class DummyEnvConfig(EnvConfig):
     """A concrete EnvConfig for dummy environments that does not require gym registration."""
@@ -31,7 +34,7 @@ class InferSingleStepConfig:
     """Configuration for single-step inference."""
 
     policy_path: str = field(
-        default="lerobot/smolvla_base",
+        default="jhou/smolvla_pickplace",
         metadata={"help": "Path or Hugging Face repo ID of the trained policy."},
     )
     device: str = field(
@@ -80,6 +83,11 @@ def infer_single_step(cfg: InferSingleStepConfig):
     # 1. Load the policy configuration
     policy_cfg = PreTrainedConfig.from_pretrained(cfg.policy_path)
 
+    # Overwrite the device from the loaded config with the one from our script's arguments.
+    # This ensures we use the desired runtime device (e.g., "cpu") even if the policy
+    # was saved with a different device (e.g., "cuda:0").
+    policy_cfg.device = device
+
     if policy_cfg.input_features and "observation.state" in policy_cfg.input_features:
         state_feature = policy_cfg.input_features["observation.state"]
         if hasattr(state_feature, 'shape') and state_feature.shape:
@@ -89,6 +97,7 @@ def infer_single_step(cfg: InferSingleStepConfig):
     # 2. Prepare configuration for loading
     policy_cfg.pretrained_path = cfg.policy_path
     policy_cfg.device = device
+    print(policy_cfg)
 
     # 3. Create a dummy environment configuration
     dummy_env_cfg = get_dummy_env_config(cfg, policy_cfg)
@@ -103,11 +112,11 @@ def infer_single_step(cfg: InferSingleStepConfig):
     dummy_state = torch.rand((1, cfg.dummy_state_dim), dtype=torch.float32, device=device)
 
     # Construct the nested observation dictionary with the specific keys expected by the model config.
+    # The policy expects keys like 'up' and 'side' based on the training dataset.
     observation: Dict[str, Any] = {
         "images": {
-            "camera1": dummy_image,
-            "camera2": dummy_image,
-            "camera3": dummy_image,
+            "up": dummy_image,
+            "side": dummy_image,
         },
         "state": dummy_state,
     }
