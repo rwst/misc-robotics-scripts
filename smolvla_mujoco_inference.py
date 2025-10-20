@@ -15,13 +15,11 @@ from transformers import AutoTokenizer
 
 # --- Configuration ---
 # TODO: Replace with your specific Hugging Face repository IDs.
-POLICY_REPO_ID = "lerobot/smolvla_base"
+POLICY_REPO_ID = "jhou/smolvla_pickplace"
 # TODO: Replace with the instruction for the task.
-INSTRUCTION = "put the yellow brick onto the blue tray"
+INSTRUCTION = "put the small object on the big object"
 # Path to the MuJoCo XML file for the environment.
-MODEL_XML_PATH = "mujoco-so101/so101-assets/so101_new_calib.xml"
-# Name of the camera to use for image observations.
-CAMERA_NAME = "camera1"
+MODEL_XML_PATH = "mujoco-so101/so101-assets/so101_with_objects.xml"
 # Image size for the policy observation.
 IMG_WIDTH = 256
 IMG_HEIGHT = 256
@@ -56,9 +54,12 @@ class SO101Env(MujocoEnv):
         # It's a dictionary with 'images' and 'state'.
         observation_space = Dict({
             "images": Dict({
-                CAMERA_NAME: Box(
+                "up": Box(
                     low=0, high=255, shape=(IMG_HEIGHT, IMG_WIDTH, 3), dtype=np.uint8
-                )
+                ),
+                "side": Box(
+                    low=0, high=255, shape=(IMG_HEIGHT, IMG_WIDTH, 3), dtype=np.uint8
+                ),
             }),
             "state": Box(low=-np.inf, high=np.inf, shape=(12,), dtype=np.float64),
         })
@@ -77,10 +78,11 @@ class SO101Env(MujocoEnv):
         Returns the observation from the environment in the format expected by SmolVLA.
         """
         # Get the state vector (joint positions and velocities).
-        state = np.concatenate([self.data.qpos, self.data.qvel]).ravel()
-        # Get the image observation.
-        image = self.render()
-        return {"images": {CAMERA_NAME: image}, "state": state}
+        state = np.concatenate([self.data.qpos[:6], self.data.qvel[:6]]).ravel()
+        # Get the image observation from both cameras.
+        image_up = self.mujoco_renderer.render(self.render_mode, camera_name="up")
+        image_side = self.mujoco_renderer.render(self.render_mode, camera_name="side")
+        return {"images": {"up": image_up, "side": image_side}, "state": state}
 
     def reset_model(self):
         """
@@ -95,7 +97,7 @@ class SO101Env(MujocoEnv):
         """
         Applies an action to the environment.
         """
-        self.data.ctrl[:action.shape[0]] = action
+        self.data.ctrl[:] = action[:6]
         mujoco.mj_step(self.model, self.data, nstep=self.frame_skip)
         observation = self._get_obs()
         reward = 0.0
@@ -127,7 +129,7 @@ def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     model_path = os.path.join(script_dir, MODEL_XML_PATH)
     print(f"Initializing custom MuJoCo environment from: {model_path}")
-    env = SO101Env(model_path=str(model_path), render_mode="rgb_array", camera_name=CAMERA_NAME)
+    env = SO101Env(model_path=str(model_path), render_mode="rgb_array")
 
     # 2. Create an EnvConfig from the environment instance.
     env_cfg = SO101EnvConfig(
@@ -138,9 +140,10 @@ def main():
 
     # Hold a neutral position
     neutral_action = np.array([ 0.03755415, -1.7234037, 1.6718199, 1.2405578, -1.411793, 0.02459861])
+    neutral_action = np.pad(neutral_action, (0, 14), 'constant')
 
     # Set the initial state of the robot to the neutral action pose
-    neutral_qvel = np.zeros_like(neutral_action)
+    neutral_qvel = np.zeros(18)
     env.set_state(neutral_action, neutral_qvel)
 
     # Hold the neutral position for a moment to stabilize before running
@@ -194,10 +197,11 @@ def main():
 
             # Manually convert to tensor, add a batch dimension, and permute channels for the image.
             # The policy expects (b, c, h, w), but the output is (h, w, c).
-            img_array = processed_batch["observation"]["images"]["camera1"]
-            # Copy the array to resolve negative stride issues from the renderer.
-            img_tensor = torch.from_numpy(img_array.copy())
-            processed_batch["observation"]["images"]["camera1"] = img_tensor.unsqueeze(0).permute(0, 3, 1, 2)
+            for cam_name in ["up", "side"]:
+                img_array = processed_batch["observation"]["images"][cam_name]
+                # Copy the array to resolve negative stride issues from the renderer.
+                img_tensor = torch.from_numpy(img_array.copy())
+                processed_batch["observation"]["images"][cam_name] = img_tensor.unsqueeze(0).permute(0, 3, 1, 2)
 
             # Also convert the state to a batched tensor.
             state_array = processed_batch["observation"]["state"]
