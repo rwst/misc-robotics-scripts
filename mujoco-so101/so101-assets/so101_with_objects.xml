@@ -1,23 +1,24 @@
 <?xml version="1.0" ?>
 <mujoco>
   <compiler meshdir="assets"/>
-  <include file="so101_new_calib.xml"/>
+  <include file="so101_new_calib_black.xml"/>
 
   <visual>
-    <headlight ambient="0.3 0.3 0.3" diffuse="0.4 0.4 0.4" specular="0.1 0.1 0.1"/>
+    <headlight ambient="0.3 0.3 0.3" diffuse="1 1 1" specular="0.1 0.1 0.1"/>
   </visual>
 
   <asset>
-    <texture type="skybox" builtin="gradient" rgb1="0.6 0.6 0.6" rgb2="0 0 0" width="512" height="512"/>
-    <material name="gray" rgba="0.5 0.5 0.5 1"/>
-    <material name="object1_material" rgba=".7 .7 0 1"/>
-    <material name="object2_material" rgba="0 0.5 1 1"/>
+    <texture type="skybox" builtin="gradient" rgb1="1 1 1" rgb2="0.5 0.5 0.5" width="512" height="512"/>
+    <material name="gray" rgba="0.7 0.7 0.7 1"/>
+    <material name="object1_material" rgba="0 0.7 0 1"/>
+    <material name="GreenOpaque" rgba="0 0.6 0 1"/>
+    <material name="TransparentCenter" rgba="0 0 0 0.5"/>
   </asset>
 
   <worldbody>
     <!-- Placeholder for SO101 robot base (expand with included file) -->
     <body name="so101_base" pos="0 0 0.02">
-      <geom type="box" size="0.05 0.05 0.05" material="gray" name="so101_base_visual_geom" contype="1" conaffinity="1"/>
+      <geom type="box" size="0.05 0.05 0.05" name="so101_base_visual_geom" contype="1" conaffinity="1" rgba="0 0 0 0"/>
       <inertial pos="0 0 0" mass="1.0" diaginertia="0.1 0.1 0.1"/>
     </body>
 
@@ -30,25 +31,58 @@
     <!-- Object 1 -->
     <body name="object1" pos="0.15 -0.15 0.025">
       <joint name="object1_to_world" type="free" damping="0.01"/>
-      <geom type="box" size="0.01 0.02 0.01" material="object1_material" name="object1_visual_geom" contype="1" conaffinity="1"/>
+      <geom type="box" size="0.007 0.015 0.005" material="object1_material" name="object1_visual_geom" contype="1" conaffinity="1"/>
       <inertial pos="0 0 0" mass="0.1" diaginertia="0.0001 0.0001 0.0001"/>
     </body>
 
     <!-- Object 2 -->
-    <body name="object2" pos="0 -0.3 0.01">
-      <joint name="object2_to_world" type="free" damping="0.01"/>
-      <geom type="box" size="0.1 0.15 0.01" material="object2_material" name="object2_visual_geom" contype="1" conaffinity="1"/>
-      <inertial pos="0 0 0" mass="0.2" diaginertia="0.001 0.001 0.0001"/>
+    <!-- This is the container body for the object -->
+    <body name="object2" pos="0 -0.15 0.01">
+        <!-- size="0.1 0.15 0.01" -->
+        <joint name="object2_to_world" type="free" damping="0.01"/>
+        <!-- 
+        Target Frame Dimensions:
+        Full Size: 0.05 (x) x 0.075 (y) x 0.01 (z)
+        Frame Thickness: 0.005 (The requested distance from the edge)
+        
+        Half-sizes for geom: 0.025 (x) x 0.0375 (y) x 0.005 (z) 
+        -->
+        
+        <!-- 1. Center (Transparent) -->
+        <!-- Inner dimensions: (0.05 - 2*0.005) x (0.075 - 2*0.005) x 0.01 -->
+        <!-- Inner half-size: 0.02 (x) x 0.0325 (y) x 0.005 (z) -->
+        <!--<geom name="center_fill" type="box" material="TransparentCenter" 
+        size="0.02 0.0325 0.005"/> -->
+
+        <!-- 2. Top Bar (Green Opaque) -->
+        <!-- Pos Y: 0.0375 (total half-y) - 0.0025 (half-thickness) = 0.035 -->
+        <geom name="top_bar" type="box" material="GreenOpaque" 
+              pos="0 0.07 0" size="0.05 0.0025 0.001"/>
+              
+        <!-- 3. Bottom Bar (Green Opaque) -->
+        <geom name="bottom_bar" type="box" material="GreenOpaque" 
+              pos="0 -0.07 0" size="0.05 0.0025 0.001"/>
+              
+        <!-- 4. Left Bar (Green Opaque) -->
+        <!-- Pos X: -0.025 (total half-x) + 0.0025 (half-thickness) = -0.0225 -->
+        <!-- Size Y: 0.075 (total full-y) - 2*0.005 (thickness) = 0.065 -->
+        <!-- Size Half-Y: 0.0325 -->
+        <geom name="left_bar" type="box" material="GreenOpaque" 
+              pos="-0.045 0 0" size="0.0025 0.065 0.001"/>
+              
+        <!-- 5. Right Bar (Green Opaque) -->
+        <geom name="right_bar" type="box" material="GreenOpaque" 
+              pos="0.045 0 0" size="0.0025 0.065 0.001"/>
     </body>
 
-    <!-- Lighting for visible sensor images -->
+    <!-- Lighting for visible sensor images
     <body>
-        <light pos="2 2 2" dir="-1 -1 -1" diffuse="0.4 0.4 0.4" ambient="0.2 0.2 0.2" directional="true" castshadow="true"/>
+        <light pos="0.5 2 2" dir="0 -1 -1" diffuse="0.2 0.2 0.2" ambient="0 0 0" directional="true"/>
     </body>
-
+    -->
     <!-- Cameras for sensors (must be inside <worldbody>) -->
-    <camera name="side_camera" pos="1 -0.5 0.5" mode="fixed"/>
-    <camera name="top_camera" pos="1 0.2 1" mode="fixed"/>
+    <camera name="side_camera" pos="0.3 -0.5 0.3" mode="fixed"/>
+    <camera name="top_camera" pos="0.5 0.05 0.5" mode="fixed"/>
   </worldbody>
 
   <option gravity="0 0 -9.81" viscosity="0.0001"/>
