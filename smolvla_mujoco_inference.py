@@ -21,11 +21,6 @@ INSTRUCTION = "put the small object on the big object"
 # Path to the MuJoCo XML file for the environment.
 MODEL_XML_PATH = "mujoco-so101/so101-assets/so101_with_objects.xml"
 #MODEL_XML_PATH = "mujoco-so101/so101-assets/so101_new_calib.xml"
-# Image size for the policy observation.
-IMG_WIDTH = 512
-IMG_HEIGHT = 512
-
-
 @dataclass
 class SO101EnvConfig(EnvConfig):
     """A concrete EnvConfig for the custom SO101 environment."""
@@ -51,26 +46,34 @@ class SO101Env(MujocoEnv):
     }
 
     def __init__(self, model_path, frame_skip=1, **kwargs):
+        # Load the model once to get rendering dimensions from the XML
+        model = mujoco.MjModel.from_xml_path(model_path)
+        # Access the global visual settings using the 'global_' attribute
+        width = model.vis.global_.offwidth
+        height = model.vis.global_.offheight
+
         # Define the observation space to match SmolVLA's expected inputs.
         # It's a dictionary with 'images' and 'state'.
         observation_space = Dict({
             "images": Dict({
                 "up": Box(
-                    low=0, high=255, shape=(IMG_HEIGHT, IMG_WIDTH, 3), dtype=np.uint8
+                    low=0, high=255, shape=(height, width, 3), dtype=np.uint8
                 ),
                 "side": Box(
-                    low=0, high=255, shape=(IMG_HEIGHT, IMG_WIDTH, 3), dtype=np.uint8
+                    low=0, high=255, shape=(height, width, 3), dtype=np.uint8
                 ),
             }),
             "state": Box(low=-np.inf, high=np.inf, shape=(12,), dtype=np.float64),
         })
 
+        # We pass the model path, and gymnasium's MujocoEnv will load it again.
+        # This is acceptable for this script's purpose.
         super().__init__(
             model_path=model_path,
             frame_skip=frame_skip,
             observation_space=observation_space,
-            width=IMG_WIDTH,
-            height=IMG_HEIGHT,
+            width=width,
+            height=height,
             **kwargs,
         )
 
@@ -130,7 +133,7 @@ def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     model_path = os.path.join(script_dir, MODEL_XML_PATH)
     print(f"Initializing custom MuJoCo environment from: {model_path}")
-    env = SO101Env(model_path=str(model_path), render_mode="rgb_array", camera_name="front_camera")
+    env = SO101Env(model_path=str(model_path), render_mode="rgb_array", camera_name="side")
 
     # 2. Create an EnvConfig from the environment instance.
     env_cfg = SO101EnvConfig(
