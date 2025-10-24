@@ -110,6 +110,32 @@ class SO101Env(MujocoEnv):
         info = {}
         return observation, reward, terminated, truncated, info
 
+def get_cam_orientation(cam_pos, target_pos):
+    """
+    Computes the quaternion orientation for the camera to look towards the target position.
+    
+    :param cam_pos: numpy array of shape (3,) for camera position [x, y, z]
+    :param target_pos: numpy array of shape (3,) for target position [x, y, z]
+    :return: numpy array of shape (4,) for quaternion [w, x, y, z]
+    """
+    fwd_dir = target_pos - cam_pos
+    fwd_dir = fwd_dir / np.linalg.norm(fwd_dir)
+
+    Z = -fwd_dir
+    world_up = np.array([0.0, 0.0, 1.0])
+
+    X = np.cross(world_up, Z)
+    X = X / np.linalg.norm(X)
+
+    Y = np.cross(Z, X)
+
+    mat = np.column_stack((X, Y, Z))
+
+    quat = np.zeros(4)
+    mujoco.mju_mat2Quat(quat, mat.flatten())
+
+    return quat
+
 
 def main():
     """
@@ -135,6 +161,9 @@ def main():
     print(f"Initializing custom MuJoCo environment from: {model_path}")
     env = SO101Env(model_path=str(model_path), render_mode="rgb_array", camera_name="side")
 
+    side_camera_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_CAMERA, "side")
+    up_camera_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_CAMERA, "up")
+
     # 2. Create an EnvConfig from the environment instance.
     env_cfg = SO101EnvConfig(
         observation_space=env.observation_space,
@@ -143,7 +172,15 @@ def main():
     )
 
     obs, info = env.reset()
-    
+
+    # set camera orientation
+    # Orient towards position (0, 0, 0),
+    target_pos = np.array([0, 0, 0]) # (0, 0, 0)
+    env.model.cam_quat[side_camera_id] = get_cam_orientation(
+            env.model.cam_pos[side_camera_id], target_pos)
+    env.model.cam_quat[up_camera_id] = get_cam_orientation(
+            env.model.cam_pos[up_camera_id], target_pos)
+
     # Hold a neutral position
     neutral_action = np.array([ 0.03755415, -1.7234037, 1.6718199, 1.2405578, -1.411793, 0.02459861])
 
