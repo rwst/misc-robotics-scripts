@@ -20,9 +20,10 @@ POLICY_REPO_ID = "jhou/smolvla_pickplace"
 INSTRUCTION = "put the small object on the big object"
 # Path to the MuJoCo XML file for the environment.
 MODEL_XML_PATH = "mujoco-so101/so101-assets/so101_with_objects.xml"
+#MODEL_XML_PATH = "mujoco-so101/so101-assets/so101_new_calib.xml"
 # Image size for the policy observation.
-IMG_WIDTH = 256
-IMG_HEIGHT = 256
+IMG_WIDTH = 512
+IMG_HEIGHT = 512
 
 
 @dataclass
@@ -112,7 +113,7 @@ def main():
     This script demonstrates how to use a pre-trained SmolVLA policy and its
     associated processors to run inference in a custom MuJoCo environment.
     """
-    parser = argparse.ArgumentParser(description="Replay actions from a .npy file in Mujoco and record a video.")
+    parser = argparse.ArgumentParser(description="Infer SO101 arm actions in response to a Mujoco env and record a video.")
     parser.add_argument(
         "--video-folder",
         type=Path,
@@ -129,7 +130,7 @@ def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     model_path = os.path.join(script_dir, MODEL_XML_PATH)
     print(f"Initializing custom MuJoCo environment from: {model_path}")
-    env = SO101Env(model_path=str(model_path), render_mode="rgb_array")
+    env = SO101Env(model_path=str(model_path), render_mode="rgb_array", camera_name="front_camera")
 
     # 2. Create an EnvConfig from the environment instance.
     env_cfg = SO101EnvConfig(
@@ -138,13 +139,21 @@ def main():
         control_freq=env.metadata["render_fps"],
     )
 
+    obs, info = env.reset()
+    
     # Hold a neutral position
     neutral_action = np.array([ 0.03755415, -1.7234037, 1.6718199, 1.2405578, -1.411793, 0.02459861])
-    neutral_action = np.pad(neutral_action, (0, 14), 'constant')
 
-    # Set the initial state of the robot to the neutral action pose
-    neutral_qvel = np.zeros(18)
-    env.set_state(neutral_action, neutral_qvel)
+    # Set the initial state of the robot to the neutral action pose while preserving object states
+    neutral_qvel = np.zeros(6)
+    # Get the full current state from the environment after reset
+    current_qpos = env.data.qpos.copy()
+    current_qvel = env.data.qvel.copy()
+    # Overwrite the robot's part of the state with the neutral pose
+    current_qpos[:6] = neutral_action
+    current_qvel[:6] = neutral_qvel
+    # Set the modified full state
+    env.set_state(current_qpos, current_qvel)
 
     # Hold the neutral position for a moment to stabilize before running
     for _ in range(100):
@@ -168,7 +177,6 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/llama-tokenizer")
 
     # 5. Run the inference loop.
-    obs, info = env.reset()
     terminated = truncated = False
     step = 0
 
@@ -217,6 +225,7 @@ def main():
             # d. Post-process the action.
             action_tensor = post_processor(action_prediction)
             action_env = action_tensor[0]
+            print(action_env)
 
             # e. Step the environment.
             obs, reward, terminated, truncated, info = env.step(action_env.cpu().numpy())
