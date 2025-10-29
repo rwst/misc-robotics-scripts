@@ -264,14 +264,37 @@ def main():
 
             # d. Post-process the action.
             action_tensor = post_processor(action_prediction)
-            action_env = action_tensor[0]
+            action_env = action_tensor[0].cpu().numpy()
             print(action_env)
 
-            # e. Step the environment.
-            obs, reward, terminated, truncated, info = env.step(action_env.cpu().numpy())
-            
-            # The environment is rendered via the window created with `render_mode="human"`.
-            # No explicit `env.render()` call is needed in the loop.
+            # e. Step the environment until the action stabilizes.
+            max_steps_per_move = 100
+            movement_epsilon = 1e-4
+            num_joints = 6  # For the robot arm
+
+            previous_pos = np.full(num_joints, np.inf)
+            for substep in range(max_steps_per_move):
+                obs, reward, terminated, truncated, info = env.step(action_env)
+                current_pos = obs['state'][:num_joints]
+
+                # Check if the movement has stopped
+                norm = np.linalg.norm(current_pos - previous_pos)
+                if norm < movement_epsilon:
+                    print(f"  Movement stabilized in {substep + 1} steps.")
+                    break
+
+                previous_pos = current_pos
+
+                if terminated or truncated:
+                    print("  Episode terminated or truncated during action execution.")
+                    break
+            else:
+                # This block executes if the for loop completes without a 'break'
+                print(f"  Warning: Action timed out after {max_steps_per_move} steps. Norm = {norm}")
+
+            if terminated or truncated:
+                print("Replay finished due to episode termination.")
+                break
 
     except KeyboardInterrupt:
         print("\nInference loop interrupted by user.")
