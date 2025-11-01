@@ -179,7 +179,7 @@ def find_3d_2d_correspondences(image, stl_mesh, robot_bbox):
     kp_ref = []
     for i, (x, y) in enumerate(zip(x_norm, y_norm)):
         ref_img[y[0], x[0]] = 255
-        kp_ref.append(cv2.KeyPoint(x=x[0], y=y[0], size=5, _angle=0, _response=0, _octave=0, _class_id=i))
+        kp_ref.append(cv2.KeyPoint(x=x[0], y=y[0], size=5, angle=0, response=0, octave=0, class_id=i))
 
     kp_ref, desc_ref = sift.compute(ref_img, kp_ref)
     if desc_ref is None:
@@ -359,7 +359,17 @@ def main():
     try:
         image1 = cv2.imread(args.image1)
         if image1 is None: raise FileNotFoundError
-        stl_mesh = trimesh.load_mesh(args.stl)
+        
+        if os.path.isdir(args.stl):
+            stl_files = [os.path.join(args.stl, f) for f in os.listdir(args.stl) if f.endswith('.stl')]
+            if not stl_files:
+                print(f"Error: No .stl files found in directory: {args.stl}")
+                return
+            mesh_list = [trimesh.load_mesh(f) for f in stl_files]
+            stl_mesh = trimesh.util.concatenate(mesh_list)
+        else:
+            stl_mesh = trimesh.load_mesh(args.stl)
+
     except (FileNotFoundError, IOError) as e:
         print(f"Error loading files: {e}")
         return
