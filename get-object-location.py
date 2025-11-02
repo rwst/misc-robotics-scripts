@@ -9,6 +9,8 @@ from PIL import Image
 import io
 import re
 import math
+from scipy.optimize import minimize
+import pyrender
 
 # --- Configuration ---
 # It's recommended to install the contrib version for SIFT
@@ -103,28 +105,156 @@ def describe_image(image_path, text_description):
 
 
 
-def estimate_camera_intrinsics(image_size):
+def improved_estimate_camera_intrinsics(image, stl_mesh, robot_bbox):
     """
-    Creates an estimated camera intrinsic matrix based on image dimensions.
-    This is a simplification for when camera calibration data is not available.
+    Estimates camera intrinsics by optimizing the alignment between a rendered STL
+    and the observed image.
 
     Args:
-        image_size (tuple): A tuple (width, height) of the image.
+        image (numpy.ndarray): The input image.
+        stl_mesh (trimesh.Trimesh): The robot's 3D model.
+        robot_bbox (tuple): The bounding box of the robot in the image.
 
     Returns:
-        numpy.ndarray: The 3x3 camera intrinsic matrix.
+        numpy.ndarray: The optimized 3x3 camera intrinsic matrix, or None if failed.
     """
-    width, height = image_size
-    focal_length = width  # A common heuristic
-    center_x = width / 2
-    center_y = height / 2
-    
-    cam_matrix = np.array([
-        [focal_length, 0, center_x],
-        [0, focal_length, center_y],
+    print("Starting improved camera intrinsic estimation...")
+    height, width, _ = image.shape
+
+    # --- Step 2.1: Pre-computation and Initialization ---
+
+    # Sample Robot Color from ROI
+    x_center, y_center, w, h = robot_bbox
+    x1, y1 = int(x_center - w / 2), int(y_center - h / 2)
+    x2, y2 = int(x_center + w / 2), int(y_center + h / 2)
+    robot_roi = image[y1:y2, x1:x2]
+    avg_color = np.mean(robot_roi.reshape(-1, 3), axis=0) / 255.0  # Normalize to [0,1]
+
+    # Initial Intrinsics Guess
+    focal_length_initial = width
+    cx, cy = width / 2, height / 2
+    K_initial = np.array([
+        [focal_length_initial, 0, cx],
+        [0, focal_length_initial, cy],
         [0, 0, 1]
     ], dtype=np.float32)
-    return cam_matrix
+
+    # Initial Pose Guess (using RANSAC for robustness)
+    points_3d, points_2d = find_3d_2d_correspondences(image, stl_mesh, robot_bbox)
+    rvec_initial, tvec_initial = estimate_pose_ransac(points_3d, points_2d, K_initial)
+
+    if rvec_initial is None or tvec_initial is None:
+        print("Error: Initial pose estimation failed. Cannot proceed with optimization.")
+        return None
+
+    # --- Step 2.2: The Objective Function for Optimization ---
+
+    # Create the "real" silhouette from the bounding box once
+    real_mask = np.zeros((height, width), dtype=bool)
+    real_mask[y1:y2, x1:x2] = True
+
+    # Setup the pyrender scene
+    scene = pyrender.Scene(bg_color=[0, 0, 0], ambient_light=[0.5, 0.5, 0.5])
+    material = pyrender.MetallicRoughnessMaterial(baseColorFactor=[*avg_color, 1.0])
+    render_mesh = pyrender.Mesh.from_trimesh(stl_mesh, material=material)
+    scene.add(render_mesh)
+    
+    # Convert initial pose to a 4x4 matrix (camera-to-world)
+    rmat_initial, _ = cv2.Rodrigues(rvec_initial)
+    pose_mat = np.eye(4)
+    pose_mat[:3, :3] = rmat_initial
+    pose_mat[:3, 3] = tvec_initial.flatten()
+    # solvePnP gives world-to-camera, pyrender needs camera-to-world, so we invert
+    camera_pose = np.linalg.inv(pose_mat)
+    
+    # Add a light source
+    light = pyrender.DirectionalLight(color=[1.0, 1.0, 1.0], intensity=2.0)
+    scene.add(light, pose=np.eye(4))
+    
+    renderer = pyrender.OffscreenRenderer(width, height)
+
+    def calculate_alignment_error(params):
+        focal_length = params[0]
+        
+        # Construct Current Intrinsics
+        K_current = np.array([[focal_length, 0, cx], [0, focal_length, cy], [0, 0, 1]])
+
+        # Render the Silhouette
+        camera = pyrender.IntrinsicsCamera(
+            fx=K_current[0, 0], fy=K_current[1, 1],
+            cx=K_current[0, 2], cy=K_current[1, 2]
+        )
+        scene.add(camera, pose=camera_pose)
+        
+        # Render and create a binary mask
+        color, _ = renderer.render(scene)
+        rendered_mask = np.any(color > 0, axis=2)
+
+        # Remove camera node for next iteration
+        for node in scene.get_nodes(obj=camera):
+            scene.remove_node(node)
+
+        # Calculate Error Metric (Intersection over Union)
+        intersection = np.logical_and(rendered_mask, real_mask).sum()
+        union = np.logical_or(rendered_mask, real_mask).sum()
+        iou = intersection / union if union > 0 else 0
+        
+        error = 1.0 - iou
+        print(f"  focal_length: {focal_length:.2f}, IoU: {iou:.4f}, Error: {error:.4f}")
+        return error
+
+    # --- Step 2.3: Running the Optimization ---
+    print("Optimizing focal length...")
+    result = minimize(
+        calculate_alignment_error,
+        x0=[focal_length_initial],
+        method='Nelder-Mead', # Good choice for noisy, gradient-free optimization
+        bounds=[(width * 0.5, width * 2.0)]
+    )
+
+    # --- Step 2.4: Final Result ---
+    optimized_focal_length = result.x[0]
+    print(f"Optimization finished. Optimal focal length: {optimized_focal_length:.2f}")
+
+    K_final = np.array([
+        [optimized_focal_length, 0, cx],
+        [0, optimized_focal_length, cy],
+        [0, 0, 1]
+    ], dtype=np.float32)
+    
+    renderer.delete()
+    return K_final
+
+
+def estimate_pose_ransac(points_3d, points_2d, camera_matrix):
+    """
+    Estimates camera pose using solvePnPRansac for robustness.
+
+    Args:
+        points_3d (numpy.ndarray): Array of 3D points.
+        points_2d (numpy.ndarray): Array of corresponding 2D points.
+        camera_matrix (numpy.ndarray): The camera intrinsic matrix.
+
+    Returns:
+        tuple: A tuple (rotation_vector, translation_vector) or (None, None).
+    """
+    if len(points_3d) < 4:
+        print("Error: Need at least 4 point correspondences for solvePnPRansac.")
+        return None, None
+        
+    dist_coeffs = np.zeros((4, 1))  # Assuming no lens distortion
+
+    try:
+        success, rvec, tvec, inliers = cv2.solvePnPRansac(points_3d, points_2d, camera_matrix, dist_coeffs)
+        if success:
+            print(f"Pose estimation with RANSAC successful. Inliers: {len(inliers)}/{len(points_3d)}")
+            return rvec, tvec
+        else:
+            print("Warning: solvePnPRansac failed.")
+            return None, None
+    except cv2.error as e:
+        print(f"Error during solvePnPRansac: {e}")
+        return None, None
 
 def find_3d_2d_correspondences(image, stl_mesh, robot_bbox):
     """
@@ -374,9 +504,13 @@ def main():
         print(f"Error loading files: {e}")
         return
 
-    # Assume camera intrinsics (a major simplification)
-    cam_matrix = estimate_camera_intrinsics((image1.shape[1], image1.shape[0]))
-    
+    # --- Step 1a: Camera Calibration ---
+    # Use the improved method to get a better estimate of camera intrinsics
+    cam_matrix = improved_estimate_camera_intrinsics(image1, stl_mesh, robot_bbox1)
+    if cam_matrix is None:
+        print("Could not determine camera intrinsics. Exiting.")
+        return
+
     # --- Determine Method: Single or Two-Frame ---
     
     if args.image2:
@@ -405,14 +539,14 @@ def main():
 
         # Step 2a & 2b for Image 1: Correspondences and Pose Estimation
         points_3d_1, points_2d_1 = find_3d_2d_correspondences(image1, stl_mesh, robot_bbox1)
-        rvec1, tvec1 = estimate_pose(points_3d_1, points_2d_1, cam_matrix)
+        rvec1, tvec1 = estimate_pose_ransac(points_3d_1, points_2d_1, cam_matrix)
         if rvec1 is None:
             print("Failed to estimate camera pose for image 1. Cannot proceed with two-frame method.")
             return
 
         # Step 2a & 2b for Image 2: Correspondences and Pose Estimation
         points_3d_2, points_2d_2 = find_3d_2d_correspondences(image2, stl_mesh, robot_bbox2)
-        rvec2, tvec2 = estimate_pose(points_3d_2, points_2d_2, cam_matrix)
+        rvec2, tvec2 = estimate_pose_ransac(points_3d_2, points_2d_2, cam_matrix)
         if rvec2 is None:
             print("Failed to estimate camera pose for image 2. Cannot proceed with two-frame method.")
             return
@@ -429,7 +563,7 @@ def main():
         
         # Step 2a: Estimate Camera Pose
         points_3d, points_2d = find_3d_2d_correspondences(image1, stl_mesh, robot_bbox1)
-        rvec, tvec = estimate_pose(points_3d, points_2d, cam_matrix)
+        rvec, tvec = estimate_pose_ransac(points_3d, points_2d, cam_matrix)
         if rvec is None:
             print("Failed to estimate camera pose. Cannot proceed.")
             return
