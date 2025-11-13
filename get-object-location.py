@@ -215,6 +215,8 @@ def improved_estimate_camera_intrinsics(image, stl_mesh, robot_bbox):
     # --- Step 2.4: Final Result ---
     optimized_focal_length = result.x[0]
     print(f"Optimization finished. Optimal focal length: {optimized_focal_length:.2f}")
+    print(f"Initial Camera Pose (Rotation Vector):\n{rvec_initial}")
+    print(f"Initial Camera Pose (Translation Vector):\n{tvec_initial}")
 
     K_final = np.array([
         [optimized_focal_length, 0, cx],
