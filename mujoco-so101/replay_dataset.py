@@ -232,6 +232,14 @@ def main():
     env = RecordVideo(env, str(args.video_folder), name_prefix=video_name_prefix)
 
     env.reset()
+
+    # Place object after reset (minimal approach - just set position)
+    if qpos_addr != -1:
+        env.unwrapped.data.qpos[qpos_addr : qpos_addr + 3] = gripper_position
+        env.unwrapped.data.qpos[qpos_addr + 3 : qpos_addr + 7] = gripper_orientation_quat
+        print(f"Placed object '{args.object_name}' at grasp location.")
+        print(f"  Position (x, y, z): ({gripper_position[0]:.3f}, {gripper_position[1]:.3f}, {gripper_position[2]:.3f})")
+
     actions = episode["action"]
 
     max_steps_per_move = 500
