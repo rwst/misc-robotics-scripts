@@ -273,36 +273,39 @@ def main():
     num_joints = env.action_space.shape[0]
 
     for i, action in enumerate(actions):
-        print(f"Executing action {i+1}/{len(actions)}...")
         scaled_action = action / 100 * np.where(action > 0, env.action_space.high, -env.action_space.low)
 
         previous_pos = np.full(num_joints, np.inf)
         for step in range(max_steps_per_move):
+            # Print progress on same line
+            print(f"\rExecuting action {i+1}/{len(actions)}... (substep {step + 1}/{max_steps_per_move})", end='', flush=True)
+
             observation, reward, terminated, truncated, info = env.step(scaled_action)
             current_pos = observation[:num_joints]
 
             # Check if the movement has stopped
             norm = np.linalg.norm(current_pos - previous_pos)
             if norm < movement_epsilon:
-                print(f"  Movement stabilized in {step + 1} steps.")
+                print(f"\rExecuting action {i+1}/{len(actions)}... stabilized in {step + 1} steps.                    ", end='', flush=True)
                 break
 
             previous_pos = current_pos
 
             if terminated or truncated:
-                print("  Episode terminated or truncated during action execution.")
+                print(f"\rExecuting action {i+1}/{len(actions)}... terminated/truncated at step {step + 1}.                    ", end='', flush=True)
                 break
         else:
             # This block executes if the for loop completes without a 'break'
-            print(f"  Warning: Action timed out after {max_steps_per_move} steps. Norm = {norm}")
+            print(f"\rExecuting action {i+1}/{len(actions)}... WARNING: timed out after {max_steps_per_move} steps (norm={norm:.6f}).                    ", end='', flush=True)
 
         if terminated or truncated:
-            print("Replay finished due to episode termination.")
+            print("\n\nReplay finished due to episode termination.")
             break
-
+    
+    print("\nWriting video...")
     env.close()
 
-    print(f"Simulation finished. Video saved in the '{args.video_folder}' directory with prefix '{video_name_prefix}'.")
+    print(f"\n\nSimulation finished. Video saved in the '{args.video_folder}' directory with prefix '{video_name_prefix}'.")
 
 
 if __name__ == "__main__":
