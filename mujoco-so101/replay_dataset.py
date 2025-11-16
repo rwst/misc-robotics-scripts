@@ -183,6 +183,7 @@ def main():
     try:
         gripper_site_name = "gripperframe"
         gripper_position = robot_data.site(gripper_site_name).xpos.copy()
+        #gripper_position = gripper_position + 1.0
         gripper_orientation_mat = robot_data.site(gripper_site_name).xmat.reshape(3, 3).copy()
         gripper_orientation_quat = np.empty(4)
         mujoco.mju_mat2Quat(gripper_orientation_quat, gripper_orientation_mat.flatten())
@@ -212,6 +213,19 @@ def main():
         env.model.cam_pos[camera_id][0] -= 0.3
 
     if args.start_image_only:
+        # Place object for start image
+        if qpos_addr != -1:
+            env.data.qpos[qpos_addr : qpos_addr + 3] = gripper_position
+            env.data.qpos[qpos_addr + 3 : qpos_addr + 7] = gripper_orientation_quat
+
+        # Set initial robot state from episode
+        initial_robot_qpos = np.deg2rad(episode["observation.state"][0])
+        env.data.qpos[: len(initial_robot_qpos)] = initial_robot_qpos
+        env.data.qvel[:] = 0  # Zero out all velocities
+
+        # Update physics to reflect the new state
+        mujoco.mj_forward(env.model, env.data)
+
         print("Generating start image only...")
         frame = env.render()
         image = Image.fromarray(frame)
