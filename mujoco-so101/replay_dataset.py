@@ -183,7 +183,7 @@ def main():
     try:
         gripper_site_name = "gripperframe"
         gripper_position = robot_data.site(gripper_site_name).xpos.copy()
-        #gripper_position = gripper_position + 1.0
+        #gripper_position = gripper_position - 0.05
         gripper_orientation_mat = robot_data.site(gripper_site_name).xmat.reshape(3, 3).copy()
         gripper_orientation_quat = np.empty(4)
         mujoco.mju_mat2Quat(gripper_orientation_quat, gripper_orientation_mat.flatten())
@@ -213,15 +213,23 @@ def main():
         env.model.cam_pos[camera_id][0] -= 0.3
 
     if args.start_image_only:
-        # Place object for start image
-        if qpos_addr != -1:
-            env.data.qpos[qpos_addr : qpos_addr + 3] = gripper_position
-            env.data.qpos[qpos_addr + 3 : qpos_addr + 7] = gripper_orientation_quat
-
-        # Set initial robot state from episode
+        # Set initial robot state from episode FIRST
         initial_robot_qpos = np.deg2rad(episode["observation.state"][0])
         env.data.qpos[: len(initial_robot_qpos)] = initial_robot_qpos
         env.data.qvel[:] = 0  # Zero out all velocities
+
+        # THEN place object (after setting robot state to avoid overwriting)
+        if qpos_addr != -1:
+            # Use gripper x,y but correct z-height for the object (0.025m for object1)
+            object_position = gripper_position.copy()
+            object_position[2] = 0.025  # Object z-height above ground
+            env.data.qpos[qpos_addr : qpos_addr + 3] = object_position
+            env.data.qpos[qpos_addr + 3 : qpos_addr + 7] = gripper_orientation_quat
+            print(f"Placed object '{args.object_name}' at position: ({object_position[0]:.3f}, {object_position[1]:.3f}, {object_position[2]:.3f})")
+            print(f"  (original gripper z was: {gripper_position[2]:.3f})")
+            print(f"  qpos_addr: {qpos_addr}, total qpos size: {env.data.qpos.size}")
+        else:
+            print(f"WARNING: Object '{args.object_name}' not found in XML!")
 
         # Update physics to reflect the new state
         mujoco.mj_forward(env.model, env.data)
@@ -249,10 +257,14 @@ def main():
 
     # Place object after reset (minimal approach - just set position)
     if qpos_addr != -1:
-        env.unwrapped.data.qpos[qpos_addr : qpos_addr + 3] = gripper_position
+        # Use gripper x,y but correct z-height for the object (0.025m for object1)
+        object_position = gripper_position.copy()
+        object_position[2] = 0.025  # Object z-height above ground
+        env.unwrapped.data.qpos[qpos_addr : qpos_addr + 3] = object_position
         env.unwrapped.data.qpos[qpos_addr + 3 : qpos_addr + 7] = gripper_orientation_quat
         print(f"Placed object '{args.object_name}' at grasp location.")
-        print(f"  Position (x, y, z): ({gripper_position[0]:.3f}, {gripper_position[1]:.3f}, {gripper_position[2]:.3f})")
+        print(f"  Position (x, y, z): ({object_position[0]:.3f}, {object_position[1]:.3f}, {object_position[2]:.3f})")
+        print(f"  (original gripper z was: {gripper_position[2]:.3f})")
 
     actions = episode["action"]
 
