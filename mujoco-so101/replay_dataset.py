@@ -246,12 +246,38 @@ def main():
 
     env.reset()
     actions = episode["action"]
+
+    max_steps_per_move = 500
+    movement_epsilon = 1e-3  # Stop if position change norm is less than this
+    num_joints = env.action_space.shape[0]
+
     for i, action in enumerate(actions):
-        # Assuming actions are raw control values (e.g., target positions in radians)
-        # If actions from dataset are in degrees, they need conversion.
-        # Based on state being in degrees, it's likely actions are too.
-        action_rad = np.deg2rad(action)
-        env.step(action_rad)
+        print(f"Executing action {i+1}/{len(actions)}...")
+        scaled_action = action / 100 * np.where(action > 0, env.action_space.high, -env.action_space.low)
+
+        previous_pos = np.full(num_joints, np.inf)
+        for step in range(max_steps_per_move):
+            observation, reward, terminated, truncated, info = env.step(scaled_action)
+            current_pos = observation[:num_joints]
+
+            # Check if the movement has stopped
+            norm = np.linalg.norm(current_pos - previous_pos)
+            if norm < movement_epsilon:
+                print(f"  Movement stabilized in {step + 1} steps.")
+                break
+
+            previous_pos = current_pos
+
+            if terminated or truncated:
+                print("  Episode terminated or truncated during action execution.")
+                break
+        else:
+            # This block executes if the for loop completes without a 'break'
+            print(f"  Warning: Action timed out after {max_steps_per_move} steps. Norm = {norm}")
+
+        if terminated or truncated:
+            print("Replay finished due to episode termination.")
+            break
 
     env.close()
 
