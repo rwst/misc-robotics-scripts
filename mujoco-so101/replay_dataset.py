@@ -198,26 +198,13 @@ def main():
         camera_name="front_camera",
     )
 
-    # 4. Place the object at the grasp location
-    try:
-        object_jnt_id = mujoco.mj_name2id(
-            env.model, mujoco.mjtObj.mjOBJ_JOINT, args.object_name
-        )
-        if object_jnt_id == -1:
-            raise KeyError
+    # 4. Get object joint info before wrapping (we'll place it after reset)
+    object_jnt_id = mujoco.mj_name2id(
+        env.model, mujoco.mjtObj.mjOBJ_JOINT, args.object_name
+    )
+    qpos_addr = -1
+    if object_jnt_id != -1:
         qpos_addr = env.model.jnt_qposadr[object_jnt_id]
-        env.data.qpos[qpos_addr : qpos_addr + 3] = gripper_position
-        env.data.qpos[qpos_addr + 3 : qpos_addr + 7] = gripper_orientation_quat
-        print(f"Placed object '{args.object_name}' at grasp location.")
-    except KeyError:
-        print(f"Warning: Joint '{args.object_name}' not found in the environment XML.")
-        print("Object will not be placed.")
-
-    # 5. Set initial robot state from episode
-    initial_robot_qpos = np.deg2rad(episode["observation.state"][0])
-    env.data.qpos[: len(initial_robot_qpos)] = initial_robot_qpos
-    env.data.qvel[: len(initial_robot_qpos)] = np.zeros_like(initial_robot_qpos)
-    mujoco.mj_forward(env.model, env.data)
 
     # Move the camera 30cm to the left
     camera_id = mujoco.mj_name2id(env.model, mujoco.mjtObj.mjOBJ_CAMERA, "front_camera")
