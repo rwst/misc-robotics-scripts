@@ -132,6 +132,11 @@ def main():
         action="store_true",
         help="Instead of writing a video, only write a snapshot image of the initial scene.",
     )
+    parser.add_argument(
+        "--compare-state",
+        action="store_true",
+        help="Compare the simulated actuator states with the dataset states after each action.",
+    )
     args = parser.parse_args()
 
     # 1. Load the Dataset
@@ -272,6 +277,13 @@ def main():
     movement_epsilon = 1e-3  # Stop if position change norm is less than this
     num_joints = env.action_space.shape[0]
 
+    # For state comparison metrics
+    if args.compare_state:
+        state_errors = []
+        print("\n" + "="*80)
+        print("STATE COMPARISON ENABLED")
+        print("="*80)
+
     for i, action in enumerate(actions):
         scaled_action = action / 100 * np.where(action > 0, env.action_space.high, -env.action_space.low)
 
@@ -298,12 +310,74 @@ def main():
             # This block executes if the for loop completes without a 'break'
             print(f"\rExecuting action {i+1}/{len(actions)}... WARNING: timed out after {max_steps_per_move} steps (norm={norm:.6f}).                    ", end='', flush=True)
 
+        # Compare simulated state with dataset state
+        if args.compare_state and i + 1 < len(episode["observation.state"]):
+            # Get current simulated state (convert from radians to degrees)
+            simulated_state_rad = observation[:num_joints]
+            simulated_state_deg = np.rad2deg(simulated_state_rad)
+
+            # Get expected state from dataset (next timestep)
+            expected_state_deg = episode["observation.state"][i + 1]
+
+            # Calculate errors
+            absolute_errors = np.abs(simulated_state_deg - expected_state_deg)
+            mae = np.mean(absolute_errors)
+            rmse = np.sqrt(np.mean((simulated_state_deg - expected_state_deg)**2))
+            max_error = np.max(absolute_errors)
+
+            state_errors.append({
+                'timestep': i,
+                'mae': mae,
+                'rmse': rmse,
+                'max_error': max_error,
+                'per_joint_errors': absolute_errors
+            })
+
+            print(f"\n  State comparison [timestep {i}→{i+1}]: MAE={mae:.4f}°, RMSE={rmse:.4f}°, Max={max_error:.4f}° (joint {np.argmax(absolute_errors)})")
+
         if terminated or truncated:
             print("\n\nReplay finished due to episode termination.")
             break
     
     print("\nWriting video...")
     env.close()
+
+    # Print state comparison summary
+    if args.compare_state and state_errors:
+        print("\n" + "="*80)
+        print("STATE COMPARISON SUMMARY")
+        print("="*80)
+
+        all_mae = [e['mae'] for e in state_errors]
+        all_rmse = [e['rmse'] for e in state_errors]
+        all_max = [e['max_error'] for e in state_errors]
+
+        print(f"Overall statistics across {len(state_errors)} timesteps:")
+        print(f"  Mean Absolute Error (MAE):")
+        print(f"    Mean:   {np.mean(all_mae):.4f}°")
+        print(f"    Median: {np.median(all_mae):.4f}°")
+        print(f"    Std:    {np.std(all_mae):.4f}°")
+        print(f"    Min:    {np.min(all_mae):.4f}°")
+        print(f"    Max:    {np.max(all_mae):.4f}°")
+        print(f"\n  Root Mean Square Error (RMSE):")
+        print(f"    Mean:   {np.mean(all_rmse):.4f}°")
+        print(f"    Median: {np.median(all_rmse):.4f}°")
+        print(f"    Std:    {np.std(all_rmse):.4f}°")
+        print(f"    Min:    {np.min(all_rmse):.4f}°")
+        print(f"    Max:    {np.max(all_rmse):.4f}°")
+        print(f"\n  Maximum per-joint error:")
+        print(f"    Mean:   {np.mean(all_max):.4f}°")
+        print(f"    Median: {np.median(all_max):.4f}°")
+        print(f"    Max:    {np.max(all_max):.4f}°")
+
+        # Per-joint statistics
+        print(f"\n  Per-joint error statistics (MAE across all timesteps):")
+        all_per_joint = np.array([e['per_joint_errors'] for e in state_errors])
+        for joint_idx in range(num_joints):
+            joint_errors = all_per_joint[:, joint_idx]
+            print(f"    Joint {joint_idx}: Mean={np.mean(joint_errors):.4f}°, Std={np.std(joint_errors):.4f}°, Max={np.max(joint_errors):.4f}°")
+
+        print("="*80)
 
     print(f"\n\nSimulation finished. Video saved in the '{args.video_folder}' directory with prefix '{video_name_prefix}'.")
 
