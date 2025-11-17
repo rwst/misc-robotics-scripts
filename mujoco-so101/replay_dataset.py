@@ -137,6 +137,12 @@ def main():
         action="store_true",
         help="Compare the simulated actuator states with the dataset states after each action.",
     )
+    parser.add_argument(
+        "--fixed-steps",
+        type=int,
+        default=None,
+        help="Execute each action for exactly N physics steps (instead of waiting for stabilization). Useful for matching real hardware timing.",
+    )
     args = parser.parse_args()
 
     # 1. Load the Dataset
@@ -284,31 +290,50 @@ def main():
         print("STATE COMPARISON ENABLED")
         print("="*80)
 
+    # Print execution mode
+    if args.fixed_steps:
+        print("\n" + "="*80)
+        print(f"FIXED-STEP MODE: Executing {args.fixed_steps} physics steps per action")
+        print("="*80)
+
     for i, action in enumerate(actions):
         scaled_action = action / 100 * np.where(action > 0, env.action_space.high, -env.action_space.low)
 
-        previous_pos = np.full(num_joints, np.inf)
-        for step in range(max_steps_per_move):
-            # Print progress on same line
-            print(f"\rExecuting action {i+1}/{len(actions)}... (substep {step + 1}/{max_steps_per_move})", end='', flush=True)
+        if args.fixed_steps:
+            # Fixed-duration execution (matches real hardware timing)
+            for step in range(args.fixed_steps):
+                print(f"\rExecuting action {i+1}/{len(actions)}... (step {step + 1}/{args.fixed_steps})", end='', flush=True)
+                observation, reward, terminated, truncated, info = env.step(scaled_action)
 
-            observation, reward, terminated, truncated, info = env.step(scaled_action)
-            current_pos = observation[:num_joints]
-
-            # Check if the movement has stopped
-            norm = np.linalg.norm(current_pos - previous_pos)
-            if norm < movement_epsilon:
-                print(f"\rExecuting action {i+1}/{len(actions)}... stabilized in {step + 1} steps.                    ", end='', flush=True)
-                break
-
-            previous_pos = current_pos
-
-            if terminated or truncated:
-                print(f"\rExecuting action {i+1}/{len(actions)}... terminated/truncated at step {step + 1}.                    ", end='', flush=True)
-                break
+                if terminated or truncated:
+                    print(f"\rExecuting action {i+1}/{len(actions)}... terminated/truncated at step {step + 1}.                    ", end='', flush=True)
+                    break
+            else:
+                print(f"\rExecuting action {i+1}/{len(actions)}... completed {args.fixed_steps} steps.                    ", end='', flush=True)
         else:
-            # This block executes if the for loop completes without a 'break'
-            print(f"\rExecuting action {i+1}/{len(actions)}... WARNING: timed out after {max_steps_per_move} steps (norm={norm:.6f}).                    ", end='', flush=True)
+            # Stabilization mode (wait until movement stops)
+            previous_pos = np.full(num_joints, np.inf)
+            for step in range(max_steps_per_move):
+                # Print progress on same line
+                print(f"\rExecuting action {i+1}/{len(actions)}... (substep {step + 1}/{max_steps_per_move})", end='', flush=True)
+
+                observation, reward, terminated, truncated, info = env.step(scaled_action)
+                current_pos = observation[:num_joints]
+
+                # Check if the movement has stopped
+                norm = np.linalg.norm(current_pos - previous_pos)
+                if norm < movement_epsilon:
+                    print(f"\rExecuting action {i+1}/{len(actions)}... stabilized in {step + 1} steps.                    ", end='', flush=True)
+                    break
+
+                previous_pos = current_pos
+
+                if terminated or truncated:
+                    print(f"\rExecuting action {i+1}/{len(actions)}... terminated/truncated at step {step + 1}.                    ", end='', flush=True)
+                    break
+            else:
+                # This block executes if the for loop completes without a 'break'
+                print(f"\rExecuting action {i+1}/{len(actions)}... WARNING: timed out after {max_steps_per_move} steps (norm={norm:.6f}).                    ", end='', flush=True)
 
         # Compare simulated state with dataset state
         if args.compare_state and i + 1 < len(episode["observation.state"]):
