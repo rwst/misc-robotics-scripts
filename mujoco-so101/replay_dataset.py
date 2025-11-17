@@ -143,6 +143,19 @@ def main():
         default=None,
         help="Execute each action for exactly N physics steps (instead of waiting for stabilization). Useful for matching real hardware timing.",
     )
+    parser.add_argument(
+        "--video",
+        action="store_true",
+        dest="video",
+        default=True,
+        help="Record video of the replay (default: yes).",
+    )
+    parser.add_argument(
+        "--no-video",
+        action="store_false",
+        dest="video",
+        help="Disable video recording.",
+    )
     args = parser.parse_args()
 
     # 1. Load the Dataset
@@ -259,10 +272,14 @@ def main():
         return
 
     # 6. Wrap for video recording and replay actions
-    video_name_prefix = (
-        f"replay_{args.repo_id.replace('/', '_')}_ep{args.episode_index}"
-    )
-    env = RecordVideo(env, str(args.video_folder), name_prefix=video_name_prefix)
+    if args.video:
+        video_name_prefix = (
+            f"replay_{args.repo_id.replace('/', '_')}_ep{args.episode_index}"
+        )
+        env = RecordVideo(env, str(args.video_folder), name_prefix=video_name_prefix)
+        print(f"Video recording enabled. Output will be saved with prefix '{video_name_prefix}'")
+    else:
+        print("Video recording disabled.")
 
     env.reset()
 
@@ -363,8 +380,9 @@ def main():
         if terminated or truncated:
             print("\n\nReplay finished due to episode termination.")
             break
-    
-    print("\nWriting video...")
+
+    if args.video:
+        print("\nWriting video...")
     env.close()
 
     # Print state comparison summary
@@ -404,7 +422,10 @@ def main():
 
         print("="*80)
 
-    print(f"\n\nSimulation finished. Video saved in the '{args.video_folder}' directory with prefix '{video_name_prefix}'.")
+    if args.video:
+        print(f"\n\nSimulation finished. Video saved in the '{args.video_folder}' directory with prefix '{video_name_prefix}'.")
+    else:
+        print("\n\nSimulation finished.")
 
 
 if __name__ == "__main__":
