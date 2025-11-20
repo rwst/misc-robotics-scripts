@@ -89,19 +89,44 @@ def find_grasp_timestep(episode, gripper_joint_index):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Replay an episode from a dataset in Mujoco and record a video."
+        description="Replay an episode from a dataset or npy files in Mujoco and record a video."
     )
     parser.add_argument(
         "--repo-id",
         type=str,
-        required=True,
+        default=None,
         help="Hugging Face repository ID of the dataset to use.",
     )
     parser.add_argument(
         "--episode-index",
         type=int,
-        required=True,
+        default=None,
         help="The episode index to process from the dataset.",
+    )
+    parser.add_argument(
+        "--actions-npy-path",
+        type=str,
+        default=None,
+        help="Path to npy file containing actions (alternative to dataset loading).",
+    )
+    parser.add_argument(
+        "--states-npy-path",
+        type=str,
+        default=None,
+        help="Path to npy file containing observation states (optional, needed for object placement).",
+    )
+    parser.add_argument(
+        "--skip-object-placement",
+        action="store_true",
+        help="Skip automatic object placement (useful when states are not available).",
+    )
+    parser.add_argument(
+        "--manual-object-position",
+        type=float,
+        nargs=3,
+        default=None,
+        metavar=("X", "Y", "Z"),
+        help="Manually specify object position [x y z] (skips grasp detection).",
     )
     parser.add_argument(
         "--robot-xml-file",
@@ -158,63 +183,113 @@ def main():
     )
     args = parser.parse_args()
 
-    # 1. Load the Dataset
-    try:
-        print(f"Loading episode {args.episode_index} from dataset '{args.repo_id}'...")
-        dataset = datasets.load_dataset(args.repo_id, split="train", streaming=True)
-        episode_dataset = dataset.filter(
-            lambda example: example["episode_index"] == args.episode_index
-        )
-        episode_steps = list(episode_dataset)
+    # Validate input arguments
+    if args.actions_npy_path and (args.repo_id or args.episode_index is not None):
+        print("Error: Cannot specify both --actions-npy-path and dataset options (--repo-id, --episode-index)")
+        return
+    if not args.actions_npy_path and not (args.repo_id and args.episode_index is not None):
+        print("Error: Must specify either --actions-npy-path or both --repo-id and --episode-index")
+        return
 
-        if not episode_steps:
-            print(f"Episode {args.episode_index} not found or is empty.")
+    # 1. Load the data (from npy files or dataset)
+    episode = {"observation.state": None, "action": None}
+
+    if args.actions_npy_path:
+        # Load from npy files
+        print(f"Loading actions from npy file: {args.actions_npy_path}")
+        try:
+            actions = np.load(args.actions_npy_path)
+            episode["action"] = actions
+            print(f"Actions loaded successfully. Shape: {actions.shape}")
+        except Exception as e:
+            print(f"Error loading actions from '{args.actions_npy_path}': {e}")
             return
 
-        episode = {
-            "observation.state": np.array(
-                [step["observation.state"] for step in episode_steps]
-            ),
-            "action": np.array([step["action"] for step in episode_steps]),
-        }
-        print("Episode loaded successfully.")
-    except Exception as e:
-        print(f"Error loading dataset '{args.repo_id}': {e}")
-        return
+        if args.states_npy_path:
+            print(f"Loading states from npy file: {args.states_npy_path}")
+            try:
+                states = np.load(args.states_npy_path)
+                episode["observation.state"] = states
+                print(f"States loaded successfully. Shape: {states.shape}")
+            except Exception as e:
+                print(f"Error loading states from '{args.states_npy_path}': {e}")
+                return
+        else:
+            print("No states file provided. Object placement will require manual position or will be skipped.")
+    else:
+        # Load from HuggingFace dataset (original behavior)
+        try:
+            print(f"Loading episode {args.episode_index} from dataset '{args.repo_id}'...")
+            dataset = datasets.load_dataset(args.repo_id, split="train", streaming=True)
+            episode_dataset = dataset.filter(
+                lambda example: example["episode_index"] == args.episode_index
+            )
+            episode_steps = list(episode_dataset)
 
-    # 2. Find the Grasp Pose using a temporary model
-    try:
-        robot_model = mujoco.MjModel.from_xml_path(args.robot_xml_file)
-        robot_data = mujoco.MjData(robot_model)
-    except Exception as e:
-        print(f"Error loading MuJoCo robot model from {args.robot_xml_file}: {e}")
-        return
+            if not episode_steps:
+                print(f"Episode {args.episode_index} not found or is empty.")
+                return
 
-    gripper_joint_index = -1
-    grasp_timestep = find_grasp_timestep(episode, gripper_joint_index)
+            episode = {
+                "observation.state": np.array(
+                    [step["observation.state"] for step in episode_steps]
+                ),
+                "action": np.array([step["action"] for step in episode_steps]),
+            }
+            print("Episode loaded successfully.")
+        except Exception as e:
+            print(f"Error loading dataset '{args.repo_id}': {e}")
+            return
 
-    if grasp_timestep is None:
-        print("Could not identify a clear grasp event in the episode.")
-        return
+    # 2. Find the Grasp Pose using a temporary model (if needed)
+    gripper_position = None
+    gripper_orientation_quat = None
 
-    print(f"Grasp event identified at timestep: {grasp_timestep}")
+    if args.skip_object_placement:
+        print("Skipping object placement (--skip-object-placement specified).")
+    elif args.manual_object_position:
+        print(f"Using manual object position: {args.manual_object_position}")
+        gripper_position = np.array(args.manual_object_position)
+        # Use default orientation (identity quaternion)
+        gripper_orientation_quat = np.array([1.0, 0.0, 0.0, 0.0])
+    elif episode["observation.state"] is not None:
+        # Automatic grasp detection using forward kinematics
+        try:
+            robot_model = mujoco.MjModel.from_xml_path(args.robot_xml_file)
+            robot_data = mujoco.MjData(robot_model)
+        except Exception as e:
+            print(f"Error loading MuJoCo robot model from {args.robot_xml_file}: {e}")
+            return
 
-    grasp_qpos = episode["observation.state"][grasp_timestep]
-    qpos_radians = np.deg2rad(grasp_qpos)
-    robot_data.qpos[: len(qpos_radians)] = qpos_radians
-    mujoco.mj_forward(robot_model, robot_data)
+        gripper_joint_index = -1
+        grasp_timestep = find_grasp_timestep(episode, gripper_joint_index)
 
-    try:
-        gripper_site_name = "gripperframe"
-        gripper_position = robot_data.site(gripper_site_name).xpos.copy()
-        #gripper_position = gripper_position - 0.05
-        gripper_orientation_mat = robot_data.site(gripper_site_name).xmat.reshape(3, 3).copy()
-        gripper_orientation_quat = np.empty(4)
-        mujoco.mju_mat2Quat(gripper_orientation_quat, gripper_orientation_mat.flatten())
-        print(f"Estimated grasped object position: {gripper_position}")
-    except KeyError:
-        print(f"Error: Site '{gripper_site_name}' not found in the robot XML.")
-        return
+        if grasp_timestep is None:
+            print("Could not identify a clear grasp event in the episode.")
+            print("Consider using --manual-object-position or --skip-object-placement")
+            return
+
+        print(f"Grasp event identified at timestep: {grasp_timestep}")
+
+        grasp_qpos = episode["observation.state"][grasp_timestep]
+        qpos_radians = np.deg2rad(grasp_qpos)
+        robot_data.qpos[: len(qpos_radians)] = qpos_radians
+        mujoco.mj_forward(robot_model, robot_data)
+
+        try:
+            gripper_site_name = "gripperframe"
+            gripper_position = robot_data.site(gripper_site_name).xpos.copy()
+            #gripper_position = gripper_position - 0.05
+            gripper_orientation_mat = robot_data.site(gripper_site_name).xmat.reshape(3, 3).copy()
+            gripper_orientation_quat = np.empty(4)
+            mujoco.mju_mat2Quat(gripper_orientation_quat, gripper_orientation_mat.flatten())
+            print(f"Estimated grasped object position: {gripper_position}")
+        except KeyError:
+            print(f"Error: Site '{gripper_site_name}' not found in the robot XML.")
+            return
+    else:
+        print("WARNING: No states available for grasp detection and no manual position specified.")
+        print("Object will not be placed. Use --manual-object-position or --skip-object-placement to suppress this warning.")
 
     # 3. Create the final environment
     env = SO101Env(
@@ -238,12 +313,13 @@ def main():
 
     if args.start_image_only:
         # Set initial robot state from episode FIRST
-        initial_robot_qpos = np.deg2rad(episode["observation.state"][0])
-        env.data.qpos[: len(initial_robot_qpos)] = initial_robot_qpos
-        env.data.qvel[:] = 0  # Zero out all velocities
+        if episode["observation.state"] is not None:
+            initial_robot_qpos = np.deg2rad(episode["observation.state"][0])
+            env.data.qpos[: len(initial_robot_qpos)] = initial_robot_qpos
+            env.data.qvel[:] = 0  # Zero out all velocities
 
         # THEN place object (after setting robot state to avoid overwriting)
-        if qpos_addr != -1:
+        if qpos_addr != -1 and gripper_position is not None:
             # Use gripper x,y but correct z-height for the object (0.025m for object1)
             object_position = gripper_position.copy()
             object_position[2] = 0.025  # Object z-height above ground
@@ -252,7 +328,9 @@ def main():
             print(f"Placed object '{args.object_name}' at position: ({object_position[0]:.3f}, {object_position[1]:.3f}, {object_position[2]:.3f})")
             print(f"  (original gripper z was: {gripper_position[2]:.3f})")
             print(f"  qpos_addr: {qpos_addr}, total qpos size: {env.data.qpos.size}")
-        else:
+        elif qpos_addr != -1 and gripper_position is None:
+            print(f"Object '{args.object_name}' found but no position available - object not placed")
+        elif qpos_addr == -1:
             print(f"WARNING: Object '{args.object_name}' not found in XML!")
 
         # Update physics to reflect the new state
@@ -261,10 +339,16 @@ def main():
         print("Generating start image only...")
         frame = env.render()
         image = Image.fromarray(frame)
-        output_path = (
-            args.video_folder
-            / f"replay_{args.repo_id.replace('/', '_')}_ep{args.episode_index}_start.png"
-        )
+
+        # Generate filename based on input source
+        if args.actions_npy_path:
+            actions_basename = Path(args.actions_npy_path).stem
+            output_path = args.video_folder / f"replay_{actions_basename}_start.png"
+        else:
+            output_path = (
+                args.video_folder
+                / f"replay_{args.repo_id.replace('/', '_')}_ep{args.episode_index}_start.png"
+            )
         args.video_folder.mkdir(parents=True, exist_ok=True)
         image.save(output_path)
         print(f"Start image saved to {output_path}")
@@ -273,9 +357,14 @@ def main():
 
     # 6. Wrap for video recording and replay actions
     if args.video:
-        video_name_prefix = (
-            f"replay_{args.repo_id.replace('/', '_')}_ep{args.episode_index}"
-        )
+        # Generate video name based on input source
+        if args.actions_npy_path:
+            actions_basename = Path(args.actions_npy_path).stem
+            video_name_prefix = f"replay_{actions_basename}"
+        else:
+            video_name_prefix = (
+                f"replay_{args.repo_id.replace('/', '_')}_ep{args.episode_index}"
+            )
         env = RecordVideo(env, str(args.video_folder), name_prefix=video_name_prefix)
         print(f"Video recording enabled. Output will be saved with prefix '{video_name_prefix}'")
     else:
@@ -284,7 +373,7 @@ def main():
     env.reset()
 
     # Place object after reset (minimal approach - just set position)
-    if qpos_addr != -1:
+    if qpos_addr != -1 and gripper_position is not None:
         # Use gripper x,y but correct z-height for the object (0.025m for object1)
         object_position = gripper_position.copy()
         object_position[2] = 0.025  # Object z-height above ground
@@ -293,6 +382,8 @@ def main():
         print(f"Placed object '{args.object_name}' at grasp location.")
         print(f"  Position (x, y, z): ({object_position[0]:.3f}, {object_position[1]:.3f}, {object_position[2]:.3f})")
         print(f"  (original gripper z was: {gripper_position[2]:.3f})")
+    elif qpos_addr != -1 and gripper_position is None:
+        print(f"Object '{args.object_name}' found but no position available - object not placed")
 
     actions = episode["action"]
 
@@ -302,10 +393,16 @@ def main():
 
     # For state comparison metrics
     if args.compare_state:
+        if episode["observation.state"] is None:
+            print("\n" + "="*80)
+            print("WARNING: --compare-state specified but no state data available!")
+            print("State comparison will be skipped. Provide --states-npy-path to enable comparison.")
+            print("="*80)
         state_errors = []
-        print("\n" + "="*80)
-        print("STATE COMPARISON ENABLED")
-        print("="*80)
+        if episode["observation.state"] is not None:
+            print("\n" + "="*80)
+            print("STATE COMPARISON ENABLED")
+            print("="*80)
 
     # Print execution mode
     if args.fixed_steps:
@@ -353,7 +450,7 @@ def main():
                 print(f"\rExecuting action {i+1}/{len(actions)}... WARNING: timed out after {max_steps_per_move} steps (norm={norm:.6f}).                    ", end='', flush=True)
 
         # Compare simulated state with dataset state
-        if args.compare_state and i + 1 < len(episode["observation.state"]):
+        if args.compare_state and episode["observation.state"] is not None and i + 1 < len(episode["observation.state"]):
             # Get current simulated state (convert from radians to degrees)
             simulated_state_rad = observation[:num_joints]
             simulated_state_deg = np.rad2deg(simulated_state_rad)
