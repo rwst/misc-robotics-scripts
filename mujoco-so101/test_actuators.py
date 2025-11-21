@@ -74,10 +74,16 @@ def main():
         default="../media",
         help="Path to the folder to save the video.",
     )
+    parser.add_argument(
+        "--env-xml-file",
+        type=str,
+        default="so101-assets/so101_new_calib.xml",
+        help="Path to the MuJoCo XML model file (relative to script directory or absolute).",
+    )
     args = parser.parse_args()
 
     # Get the absolute path to the XML file
-    model_path = os.path.join(os.path.dirname(__file__), "../so101-assets/so101_new_calib.xml")
+    model_path = os.path.join(os.path.dirname(__file__), args.env_xml_file)
 
     # Create the custom Gymnasium environment
     env = SO101Env(model_path=model_path, render_mode="rgb_array", camera_name="front_camera")
@@ -100,12 +106,19 @@ def main():
     
     num_joints = env.action_space.shape[0]
     
-    # Hold a neutral position
+    # Hold a neutral position for the robot
     neutral_action = np.array([ 0.03755415, -1.7234037, 1.6718199, 1.2405578, -1.411793, 0.02459861])
 
-    # Set the initial state of the robot to the neutral action pose
-    neutral_qvel = np.zeros_like(neutral_action)
-    env.set_state(neutral_action, neutral_qvel)
+    # Get full state from environment initialization (includes objects if present)
+    full_qpos = env.unwrapped.init_qpos.copy()
+    full_qvel = env.unwrapped.init_qvel.copy()
+
+    # Set robot joint positions to neutral (first num_joints DoF)
+    full_qpos[:num_joints] = neutral_action
+    full_qvel[:num_joints] = 0  # Zero velocity for robot joints
+
+    # Set the complete state (works for models with or without objects)
+    env.unwrapped.set_state(full_qpos, full_qvel)
     
     # Hold the neutral position for a moment to stabilize before testing
     for _ in range(100):
@@ -118,17 +131,17 @@ def main():
     # Test each joint sequentially
     for i in range(num_joints):
         # Ensure the actuator's target is a joint before proceeding
-        if env.model.actuator_trntype[i] == mujoco.mjtTrn.mjTRN_JOINT:
+        if env.unwrapped.model.actuator_trntype[i] == mujoco.mjtTrn.mjTRN_JOINT:
             # Get the ID (the first element) and name of the joint controlled by the actuator
-            joint_id = env.model.actuator_trnid[i, 0]
-            joint_name = mujoco.mj_id2name(env.model, mujoco.mjtObj.mjOBJ_JOINT, joint_id)
+            joint_id = env.unwrapped.model.actuator_trnid[i, 0]
+            joint_name = mujoco.mj_id2name(env.unwrapped.model, mujoco.mjtObj.mjOBJ_JOINT, joint_id)
             
             # Get the address of the joint's position value in the qpos array
-            qpos_addr = env.model.jnt_qposadr[joint_id]
+            qpos_addr = env.unwrapped.model.jnt_qposadr[joint_id]
             
             # Get the position limits for the joint
-            joint_min_pos = env.model.jnt_range[joint_id][0]
-            joint_max_pos = env.model.jnt_range[joint_id][1]
+            joint_min_pos = env.unwrapped.model.jnt_range[joint_id][0]
+            joint_max_pos = env.unwrapped.model.jnt_range[joint_id][1]
 
             print(f"\nTesting Actuator {i} (Joint: '{joint_name}')")
             action = np.copy(neutral_action)
