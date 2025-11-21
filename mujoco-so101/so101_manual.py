@@ -63,7 +63,7 @@ class SO101Env(MujocoEnv):
 
 
 # Get the absolute path to the XML file
-model_path = os.path.join(os.path.dirname(__file__), "../so101-assets/so101_new_calib.xml")
+model_path = os.path.join(os.path.dirname(__file__), "so101-assets/so101_new_calib.xml")
 
 # Create the custom Gymnasium environment
 env = SO101Env(model_path=model_path, render_mode="rgb_array", camera_name="front_camera")
