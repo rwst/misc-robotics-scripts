@@ -1,0 +1,66 @@
+<?xml version="1.0" ?>
+<mujoco>
+  <compiler meshdir="assets"/>
+  <include file="so101_new_calib_black.xml"/>
+
+  <visual>
+    <global offwidth="640" offheight="480"/>
+    <headlight ambient="0.3 0.3 0.3" diffuse="1 1 1" specular="0.1 0.1 0.1"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="1 1 1" rgb2="0.5 0.5 0.5" width="512" height="512"/>
+    <material name="gray" rgba="0.7 0.7 0.7 1"/>
+    <material name="object1_material" rgba="0 0.7 0 1"/>
+    <material name="GreenOpaque" rgba="0 0.6 0 1"/>
+    <material name="TransparentCenter" rgba="0 0 0 0.5"/>
+  </asset>
+
+  <worldbody>
+    <!-- REMOVED: so101_base floating body - was causing solver issues -->
+
+    <!-- REMOVED: table floating body - was causing solver issues -->
+
+    <!-- Ground plane to prevent objects from falling -->
+    <!-- contype/conaffinity set to 7 (binary 111) to collide with groups 1,2,4 -->
+    <geom name="ground" type="plane" size="2 2 0.01" pos="0 0 0" contype="7" conaffinity="7" rgba="0.9 0.9 0.9 1"/>
+
+    <!-- Object 1 -->
+    <body name="object1" pos="0.15 -0.15 0.025">
+      <joint name="object1_to_world" type="free" damping="0.01"/>
+      <geom type="box" size="0.007 0.015 0.005" material="object1_material" name="object1_visual_geom" contype="2" conaffinity="2"/>
+      <inertial pos="0 0 0" mass="0.1" diaginertia="0.0001 0.0001 0.0001"/>
+    </body>
+
+    <!-- Object 2 -->
+    <!-- This is the container body for the object -->
+    <body name="object2" pos="0 -0.15 0.01">
+        <!-- size="0.1 0.15 0.01" -->
+        <joint name="object2_to_world" type="free" damping="0.01"/>
+
+        <!-- 2. Top Bar (Green Opaque) -->
+        <geom name="top_bar" type="box" material="GreenOpaque" contype="4" conaffinity="4"
+              pos="0 0.07 0" size="0.05 0.0025 0.001"/>
+
+        <!-- 3. Bottom Bar (Green Opaque) -->
+        <geom name="bottom_bar" type="box" material="GreenOpaque"
+              pos="0 -0.07 0" size="0.05 0.0025 0.001"/>
+
+        <!-- 4. Left Bar (Green Opaque) -->
+        <geom name="left_bar" type="box" material="GreenOpaque"
+              pos="-0.045 0 0" size="0.0025 0.065 0.001"/>
+
+        <!-- 5. Right Bar (Green Opaque) -->
+        <geom name="right_bar" type="box" material="GreenOpaque"
+              pos="0.045 0 0" size="0.0025 0.065 0.001"/>
+
+        <!-- Added missing inertial properties -->
+        <inertial pos="0 0 0" mass="0.05" diaginertia="0.0001 0.0001 0.0001"/>
+    </body>
+
+    <!-- Cameras for sensors (must be inside <worldbody>) -->
+    <camera name="side" pos="0.3 -0.5 0.3" mode="fixed"/>
+    <camera name="up" pos="0.5 0.05 0.5" mode="fixed"/>
+  </worldbody>
+
+</mujoco>
