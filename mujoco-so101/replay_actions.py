@@ -146,7 +146,9 @@ def main():
 
     for i, action in enumerate(actions):
         print(f"Executing action {i+1}/{len(actions)}...")
-        scaled_action = action / 100 * np.where(action > 0, env.action_space.high, -env.action_space.low)
+        # IMPORTANT: Actions from LeRobot datasets are already in degrees for SO101
+        # Convert directly to radians without the -100 to 100 scaling
+        scaled_action = np.deg2rad(action)
 
         previous_pos = np.full(num_joints, np.inf)
         for step in range(max_steps_per_move):
