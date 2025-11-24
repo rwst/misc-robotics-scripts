@@ -410,6 +410,20 @@ def main():
         print(f"FIXED-STEP MODE: Executing {args.fixed_steps} physics steps per action")
         print("="*80)
 
+    # Print joint names
+    print("\nJoint Mapping:")
+    for idx, name in enumerate(env.model.names[env.model.name_jntadr[0]:].split(b'\x00')):
+        # This is a bit hacky to get names, better to use env.model.joint(i).name if possible or iterate actuators
+        pass
+    
+    # Better way to list actuator names which correspond to actions
+    actuator_names = []
+    for i in range(env.model.nu):
+        name = mujoco.mj_id2name(env.model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
+        actuator_names.append(name)
+        print(f"  Action Index {i}: {name}")
+    print("")
+
     for i, action in enumerate(actions):
         scaled_action = action / 100 * np.where(action > 0, env.action_space.high, -env.action_space.low)
 
