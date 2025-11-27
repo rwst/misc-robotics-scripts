@@ -159,8 +159,11 @@ def main():
     )
     parser.add_argument(
         "--compare-state",
-        action="store_true",
-        help="Compare the simulated actuator states with the dataset states after each action.",
+        nargs='?',
+        const='all',
+        default=None,
+        metavar='TIMESTEP',
+        help="Compare the simulated actuator states with the dataset states. Use without argument to compare all timesteps, or provide a specific timestep number to compare only that timestep (with detailed vectors).",
     )
     parser.add_argument(
         "--fixed-steps",
@@ -398,17 +401,31 @@ def main():
     num_joints = env.action_space.shape[0]
 
     # For state comparison metrics
-    if args.compare_state:
+    compare_all_states = False
+    compare_specific_timestep = None
+
+    if args.compare_state is not None:
         if episode["observation.state"] is None:
             print("\n" + "="*80)
             print("WARNING: --compare-state specified but no state data available!")
             print("State comparison will be skipped. Provide --states-npy-path to enable comparison.")
             print("="*80)
-        state_errors = []
-        if episode["observation.state"] is not None:
-            print("\n" + "="*80)
-            print("STATE COMPARISON ENABLED")
-            print("="*80)
+        else:
+            if args.compare_state == 'all':
+                compare_all_states = True
+                state_errors = []
+                print("\n" + "="*80)
+                print("STATE COMPARISON ENABLED (all timesteps)")
+                print("="*80)
+            else:
+                try:
+                    compare_specific_timestep = int(args.compare_state)
+                    print("\n" + "="*80)
+                    print(f"STATE COMPARISON ENABLED (timestep {compare_specific_timestep} only)")
+                    print("="*80)
+                except ValueError:
+                    print(f"Error: Invalid timestep value '{args.compare_state}'. Must be 'all' or an integer.")
+                    return
 
     # Print execution mode
     if args.fixed_steps:
@@ -465,7 +482,7 @@ def main():
                     print(f"\rExecuting action {i+1}/{len(actions)}... WARNING: timed out after {max_steps_per_move} steps (norm={norm:.6f}).                    ", end='', flush=True)
 
         # Compare simulated state with dataset state
-        if args.compare_state and episode["observation.state"] is not None and i + 1 < len(episode["observation.state"]):
+        if episode["observation.state"] is not None and i + 1 < len(episode["observation.state"]):
             # Get current simulated state (convert from radians to degrees)
             simulated_state_rad = observation[:num_joints]
             simulated_state_deg = np.rad2deg(simulated_state_rad)
@@ -473,22 +490,57 @@ def main():
             # Get expected state from dataset (next timestep)
             expected_state_deg = episode["observation.state"][i + 1]
 
-            # Calculate errors
-            absolute_errors = np.abs(simulated_state_deg - expected_state_deg)
-            mae = np.mean(absolute_errors)
-            rmse = np.sqrt(np.mean((simulated_state_deg - expected_state_deg)**2))
-            max_error = np.max(absolute_errors)
+            # Detailed comparison for specific timestep
+            if compare_specific_timestep is not None and i == compare_specific_timestep:
+                print("\n" + "="*80)
+                print(f"DETAILED STATE COMPARISON AT TIMESTEP {i}")
+                print("="*80)
 
-            state_errors.append({
-                'timestep': i,
-                'mae': mae,
-                'rmse': rmse,
-                'max_error': max_error,
-                'per_joint_errors': absolute_errors
-            })
+                # Print action vector (already in degrees from dataset)
+                print(f"\nAction vector [timestep {i}] (degrees):")
+                print(f"  {action}")
 
-            if args.verbosity > 0:
-                print(f"\n  State comparison [timestep {i}→{i+1}]: MAE={mae:.4f}°, RMSE={rmse:.4f}°, Max={max_error:.4f}° (joint {np.argmax(absolute_errors)})")
+                # Print expected state from dataset
+                print(f"\nExpected state [timestep {i+1}] from dataset (degrees):")
+                print(f"  {expected_state_deg}")
+
+                # Print actual simulated state
+                print(f"\nActual MuJoCo state [timestep {i+1}] (degrees):")
+                print(f"  {simulated_state_deg}")
+
+                # Print per-joint differences
+                absolute_errors = np.abs(simulated_state_deg - expected_state_deg)
+                print(f"\nPer-joint errors (degrees):")
+                for joint_idx in range(num_joints):
+                    print(f"  Joint {joint_idx}: {absolute_errors[joint_idx]:.4f}°")
+
+                mae = np.mean(absolute_errors)
+                rmse = np.sqrt(np.mean((simulated_state_deg - expected_state_deg)**2))
+                max_error = np.max(absolute_errors)
+                print(f"\nAggregate errors:")
+                print(f"  MAE:  {mae:.4f}°")
+                print(f"  RMSE: {rmse:.4f}°")
+                print(f"  Max:  {max_error:.4f}° (joint {np.argmax(absolute_errors)})")
+                print("="*80)
+
+            # Collect statistics for all timesteps mode
+            if compare_all_states:
+                # Calculate errors
+                absolute_errors = np.abs(simulated_state_deg - expected_state_deg)
+                mae = np.mean(absolute_errors)
+                rmse = np.sqrt(np.mean((simulated_state_deg - expected_state_deg)**2))
+                max_error = np.max(absolute_errors)
+
+                state_errors.append({
+                    'timestep': i,
+                    'mae': mae,
+                    'rmse': rmse,
+                    'max_error': max_error,
+                    'per_joint_errors': absolute_errors
+                })
+
+                if args.verbosity > 0:
+                    print(f"\n  State comparison [timestep {i}→{i+1}]: MAE={mae:.4f}°, RMSE={rmse:.4f}°, Max={max_error:.4f}° (joint {np.argmax(absolute_errors)})")
 
         if terminated or truncated:
             print("\n\nReplay finished due to episode termination.")
@@ -498,8 +550,8 @@ def main():
         print("\nWriting video...")
     env.close()
 
-    # Print state comparison summary
-    if args.compare_state and state_errors:
+    # Print state comparison summary (only for compare-all mode)
+    if compare_all_states and state_errors:
         print("\n" + "="*80)
         print("STATE COMPARISON SUMMARY")
         print("="*80)
