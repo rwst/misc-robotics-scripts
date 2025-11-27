@@ -427,6 +427,19 @@ def main():
                     print(f"Error: Invalid timestep value '{args.compare_state}'. Must be 'all' or an integer.")
                     return
 
+    # Load FK model for gripper position computation if needed
+    fk_model = None
+    fk_data = None
+    if compare_specific_timestep is not None:
+        try:
+            fk_model = mujoco.MjModel.from_xml_path(args.robot_xml_file)
+            fk_data = mujoco.MjData(fk_model)
+            print(f"Loaded FK model from {args.robot_xml_file} for gripper position computation")
+        except Exception as e:
+            print(f"Warning: Could not load FK model for gripper position computation: {e}")
+            fk_model = None
+            fk_data = None
+
     # Print execution mode
     if args.fixed_steps:
         print("\n" + "="*80)
@@ -521,6 +534,38 @@ def main():
                 print(f"  MAE:  {mae:.4f}°")
                 print(f"  RMSE: {rmse:.4f}°")
                 print(f"  Max:  {max_error:.4f}° (joint {np.argmax(absolute_errors)})")
+
+                # Compute gripper positions if FK model is available
+                if fk_model is not None and fk_data is not None:
+                    try:
+                        gripper_site_name = "gripperframe"
+
+                        # Compute expected gripper position from dataset state
+                        expected_qpos_rad = np.deg2rad(expected_state_deg)
+                        fk_data.qpos[:len(expected_qpos_rad)] = expected_qpos_rad
+                        mujoco.mj_forward(fk_model, fk_data)
+                        expected_gripper_pos = fk_data.site(gripper_site_name).xpos.copy()
+
+                        # Compute actual gripper position from simulated state
+                        actual_qpos_rad = simulated_state_rad
+                        fk_data.qpos[:len(actual_qpos_rad)] = actual_qpos_rad
+                        mujoco.mj_forward(fk_model, fk_data)
+                        actual_gripper_pos = fk_data.site(gripper_site_name).xpos.copy()
+
+                        # Compute position difference
+                        gripper_pos_error = np.linalg.norm(actual_gripper_pos - expected_gripper_pos)
+                        gripper_pos_diff = actual_gripper_pos - expected_gripper_pos
+
+                        print(f"\nGripper position comparison:")
+                        print(f"  Expected (from dataset):    [{expected_gripper_pos[0]:.6f}, {expected_gripper_pos[1]:.6f}, {expected_gripper_pos[2]:.6f}] m")
+                        print(f"  Actual (from simulation):   [{actual_gripper_pos[0]:.6f}, {actual_gripper_pos[1]:.6f}, {actual_gripper_pos[2]:.6f}] m")
+                        print(f"  Euclidean error: {gripper_pos_error:.6f} m ({gripper_pos_error*1000:.3f} mm)")
+                        print(f"  Per-axis differences: dx={gripper_pos_diff[0]:.6f} m, dy={gripper_pos_diff[1]:.6f} m, dz={gripper_pos_diff[2]:.6f} m")
+                    except KeyError:
+                        print(f"\nWarning: Site '{gripper_site_name}' not found in FK model - cannot compute gripper positions")
+                    except Exception as e:
+                        print(f"\nWarning: Could not compute gripper positions: {e}")
+
                 print("="*80)
 
             # Collect statistics for all timesteps mode
