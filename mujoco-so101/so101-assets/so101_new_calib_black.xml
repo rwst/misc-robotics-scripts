@@ -18,7 +18,7 @@
   <!-- Additional joints_properties.xml -->
   <default>
     <default class="sts3215">
-      <geom contype="0" conaffinity="0"/>
+      <geom contype="1" conaffinity="1"/>
       <joint damping="0.60" frictionloss="0.052" armature="0.028"/>
       <!-- For lerobot this are not exactly the motor params as the Kp and Kd not map 1-to-1 thus motor idendification with lerobot Kp=16 and Kd=32 should actually be done -->
       <position kp="17.8"/>

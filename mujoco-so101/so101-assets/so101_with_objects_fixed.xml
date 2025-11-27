@@ -28,7 +28,7 @@
     <!-- Object 1 -->
     <body name="object1" pos="0.15 -0.15 0.025">
       <joint name="object1_to_world" type="free" damping="0.01"/>
-      <geom type="box" size="0.007 0.015 0.005" material="object1_material" name="object1_visual_geom" contype="2" conaffinity="2"/>
+      <geom type="box" size="0.007 0.015 0.005" material="object1_material" name="object1_visual_geom" contype="2" conaffinity="3" friction="1.0 0.005 0.0001"/>
       <inertial pos="0 0 0" mass="0.1" diaginertia="0.0001 0.0001 0.0001"/>
     </body>
 
@@ -39,20 +39,20 @@
         <joint name="object2_to_world" type="free" damping="0.01"/>
 
         <!-- 2. Top Bar (Green Opaque) -->
-        <geom name="top_bar" type="box" material="GreenOpaque" contype="4" conaffinity="4"
-              pos="0 0.07 0" size="0.05 0.0025 0.001"/>
+        <geom name="top_bar" type="box" material="GreenOpaque" contype="4" conaffinity="5"
+              pos="0 0.07 0" size="0.05 0.0025 0.001" friction="0.8 0.005 0.0001"/>
 
         <!-- 3. Bottom Bar (Green Opaque) -->
-        <geom name="bottom_bar" type="box" material="GreenOpaque"
-              pos="0 -0.07 0" size="0.05 0.0025 0.001"/>
+        <geom name="bottom_bar" type="box" material="GreenOpaque" contype="4" conaffinity="5"
+              pos="0 -0.07 0" size="0.05 0.0025 0.001" friction="0.8 0.005 0.0001"/>
 
         <!-- 4. Left Bar (Green Opaque) -->
-        <geom name="left_bar" type="box" material="GreenOpaque"
-              pos="-0.045 0 0" size="0.0025 0.065 0.001"/>
+        <geom name="left_bar" type="box" material="GreenOpaque" contype="4" conaffinity="5"
+              pos="-0.045 0 0" size="0.0025 0.065 0.001" friction="0.8 0.005 0.0001"/>
 
         <!-- 5. Right Bar (Green Opaque) -->
-        <geom name="right_bar" type="box" material="GreenOpaque"
-              pos="0.045 0 0" size="0.0025 0.065 0.001"/>
+        <geom name="right_bar" type="box" material="GreenOpaque" contype="4" conaffinity="5"
+              pos="0.045 0 0" size="0.0025 0.065 0.001" friction="0.8 0.005 0.0001"/>
 
         <!-- Added missing inertial properties -->
         <inertial pos="0 0 0" mass="0.05" diaginertia="0.0001 0.0001 0.0001"/>
