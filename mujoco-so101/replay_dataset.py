@@ -181,6 +181,12 @@ def main():
         dest="video",
         help="Disable video recording.",
     )
+    parser.add_argument(
+        "--verbosity",
+        type=int,
+        default=1,
+        help="Verbosity level for action execution progress (0=off, 1=on). Default: 1.",
+    )
     args = parser.parse_args()
 
     # Validate input arguments
@@ -418,20 +424,24 @@ def main():
         if args.fixed_steps:
             # Fixed-duration execution (matches real hardware timing)
             for step in range(args.fixed_steps):
-                print(f"\rExecuting action {i+1}/{len(actions)}... (step {step + 1}/{args.fixed_steps})", end='', flush=True)
+                if args.verbosity > 0:
+                    print(f"\rExecuting action {i+1}/{len(actions)}... (step {step + 1}/{args.fixed_steps})", end='', flush=True)
                 observation, reward, terminated, truncated, info = env.step(scaled_action)
 
                 if terminated or truncated:
-                    print(f"\rExecuting action {i+1}/{len(actions)}... terminated/truncated at step {step + 1}.                    ", end='', flush=True)
+                    if args.verbosity > 0:
+                        print(f"\rExecuting action {i+1}/{len(actions)}... terminated/truncated at step {step + 1}.                    ", end='', flush=True)
                     break
             else:
-                print(f"\rExecuting action {i+1}/{len(actions)}... completed {args.fixed_steps} steps.                    ", end='', flush=True)
+                if args.verbosity > 0:
+                    print(f"\rExecuting action {i+1}/{len(actions)}... completed {args.fixed_steps} steps.                    ", end='', flush=True)
         else:
             # Stabilization mode (wait until movement stops)
             previous_pos = np.full(num_joints, np.inf)
             for step in range(max_steps_per_move):
                 # Print progress on same line
-                print(f"\rExecuting action {i+1}/{len(actions)}... (substep {step + 1}/{max_steps_per_move})", end='', flush=True)
+                if args.verbosity > 0:
+                    print(f"\rExecuting action {i+1}/{len(actions)}... (substep {step + 1}/{max_steps_per_move})", end='', flush=True)
 
                 observation, reward, terminated, truncated, info = env.step(scaled_action)
                 current_pos = observation[:num_joints]
@@ -439,17 +449,20 @@ def main():
                 # Check if the movement has stopped
                 norm = np.linalg.norm(current_pos - previous_pos)
                 if norm < movement_epsilon:
-                    print(f"\rExecuting action {i+1}/{len(actions)}... stabilized in {step + 1} steps.                    ", end='', flush=True)
+                    if args.verbosity > 0:
+                        print(f"\rExecuting action {i+1}/{len(actions)}... stabilized in {step + 1} steps.                    ", end='', flush=True)
                     break
 
                 previous_pos = current_pos
 
                 if terminated or truncated:
-                    print(f"\rExecuting action {i+1}/{len(actions)}... terminated/truncated at step {step + 1}.                    ", end='', flush=True)
+                    if args.verbosity > 0:
+                        print(f"\rExecuting action {i+1}/{len(actions)}... terminated/truncated at step {step + 1}.                    ", end='', flush=True)
                     break
             else:
                 # This block executes if the for loop completes without a 'break'
-                print(f"\rExecuting action {i+1}/{len(actions)}... WARNING: timed out after {max_steps_per_move} steps (norm={norm:.6f}).                    ", end='', flush=True)
+                if args.verbosity > 0:
+                    print(f"\rExecuting action {i+1}/{len(actions)}... WARNING: timed out after {max_steps_per_move} steps (norm={norm:.6f}).                    ", end='', flush=True)
 
         # Compare simulated state with dataset state
         if args.compare_state and episode["observation.state"] is not None and i + 1 < len(episode["observation.state"]):
@@ -474,7 +487,8 @@ def main():
                 'per_joint_errors': absolute_errors
             })
 
-            print(f"\n  State comparison [timestep {i}→{i+1}]: MAE={mae:.4f}°, RMSE={rmse:.4f}°, Max={max_error:.4f}° (joint {np.argmax(absolute_errors)})")
+            if args.verbosity > 0:
+                print(f"\n  State comparison [timestep {i}→{i+1}]: MAE={mae:.4f}°, RMSE={rmse:.4f}°, Max={max_error:.4f}° (joint {np.argmax(absolute_errors)})")
 
         if terminated or truncated:
             print("\n\nReplay finished due to episode termination.")
