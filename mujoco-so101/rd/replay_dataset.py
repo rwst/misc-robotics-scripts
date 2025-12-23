@@ -60,7 +60,14 @@ class SO101Env(MujocoEnv):
         """
         Applies an action to the environment.
         """
-        self.data.ctrl[:action.shape[0]] = action
+        # Validate action dimension
+        if action.shape[0] != self.model.nu:
+            raise ValueError(
+                f"Action dimension mismatch: expected {self.model.nu} actuators, "
+                f"got action with shape {action.shape}"
+            )
+
+        self.data.ctrl[:] = action
         mujoco.mj_step(self.model, self.data, nstep=self.frame_skip)
         observation = self._get_obs()
         reward = 0.0
