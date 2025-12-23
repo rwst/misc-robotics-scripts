@@ -396,9 +396,46 @@ def main():
 
     actions = episode["action"]
 
+    # Validate actions array
+    if actions is None or len(actions) == 0:
+        print("Error: No actions found in the episode data.")
+        return
+
+    if actions.ndim != 2:
+        print(f"Error: Actions must be a 2D array, got shape {actions.shape}")
+        return
+
     max_steps_per_move = 500
     movement_epsilon = 1e-3  # Stop if position change norm is less than this
     num_joints = env.action_space.shape[0]
+
+    # Validate action dimension matches environment
+    if actions.shape[1] != num_joints:
+        print(f"Error: Action dimension ({actions.shape[1]}) does not match environment action space ({num_joints})")
+        print(f"Actions shape: {actions.shape}")
+        print(f"Environment action space: {env.action_space.shape}")
+        return
+
+    # Validate states shape if provided
+    if episode["observation.state"] is not None:
+        states = episode["observation.state"]
+        if states.ndim != 2:
+            print(f"Error: States must be a 2D array, got shape {states.shape}")
+            return
+
+        num_states = states.shape[0]
+        num_actions = actions.shape[0]
+
+        if num_states < num_actions:
+            print(f"Error: Not enough states ({num_states}) for the number of actions ({num_actions})")
+            print("Expected at least as many states as actions.")
+            return
+        elif num_states == num_actions:
+            print(f"Warning: States and actions have the same length ({num_actions})")
+            print("State comparison for the last action will not be available.")
+        elif num_states > num_actions + 1:
+            print(f"Warning: More states ({num_states}) than expected for {num_actions} actions")
+            print(f"Expected {num_actions} or {num_actions + 1} states.")
 
     # For state comparison metrics
     compare_all_states = False
