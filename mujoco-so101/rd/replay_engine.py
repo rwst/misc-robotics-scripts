@@ -32,7 +32,7 @@ def generate_start_image(env, episode, gripper_position, gripper_orientation_qua
         env.data.qvel[:] = 0  # Zero out all velocities
 
     # THEN place object (after setting robot state to avoid overwriting)
-    place_object_in_scene(env.data, qpos_addr, gripper_position, gripper_orientation_quat, args.object_name)
+    place_object_in_scene(env.data, qpos_addr, gripper_position, gripper_orientation_quat, args.object_name, env.model)
 
     # Update physics to reflect the new state
     mujoco.mj_forward(env.model, env.data)

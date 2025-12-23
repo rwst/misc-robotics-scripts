@@ -172,7 +172,7 @@ def main():
 
     # 7. Reset environment and place object
     env.reset()
-    place_object_in_scene(env.unwrapped.data, qpos_addr, gripper_position, gripper_orientation_quat, args.object_name)
+    place_object_in_scene(env.unwrapped.data, qpos_addr, gripper_position, gripper_orientation_quat, args.object_name, env.unwrapped.model)
 
     # 8. Validate episode data
     actions, num_joints, valid = validate_episode_data(episode, env)
