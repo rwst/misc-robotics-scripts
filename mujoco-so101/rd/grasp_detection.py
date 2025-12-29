@@ -5,6 +5,13 @@ Grasp detection and forward kinematics utilities.
 import mujoco
 import numpy as np
 
+# Offset from gripperframe site to the center between gripper jaws
+# Measured in gripperframe local coordinates [x, y, z] in meters
+# X: along gripper axis (negative = behind gripperframe)
+# Y: jaw opening direction
+# Z: perpendicular to both
+GRIPPER_CENTER_OFFSET = np.array([-0.0864274, 0.00961812, 0.018])
+
 
 def find_grasp_timestep(episode, gripper_joint_index):
     """
@@ -84,13 +91,42 @@ def detect_grasp_and_compute_object_pose(episode, args):
 
     try:
         gripper_site_name = "gripperframe"
-        gripper_position = robot_data.site(gripper_site_name).xpos.copy()
-        gripper_orientation_mat = robot_data.site(gripper_site_name).xmat.reshape(3, 3).copy()
-        gripper_orientation_quat = np.empty(4)
-        mujoco.mju_mat2Quat(gripper_orientation_quat, gripper_orientation_mat.flatten())
-        print(f"Estimated grasped object position: {gripper_position}")
+        gripperframe_position = robot_data.site(gripper_site_name).xpos.copy()
+        gripperframe_orientation_mat = robot_data.site(gripper_site_name).xmat.reshape(3, 3).copy()
+
+        # Transform offset from gripper local frame to world frame
+        # offset_world = R_world @ offset_local
+        gripper_center_offset_world = gripperframe_orientation_mat @ GRIPPER_CENTER_OFFSET
+
+        # Compute object position at the center between jaws
+        object_position = gripperframe_position + gripper_center_offset_world
+
+        print(f"Gripperframe position: {gripperframe_position}")
+        print(f"Gripper center offset (world): {gripper_center_offset_world}")
+        print(f"Estimated grasped object position (jaw center): {object_position}")
+
+        # Compute object orientation
+        # The object's long axis should be perpendicular to the jaw opening direction
+        # Gripper Y-axis is the jaw opening direction
+        # We want object's Y-axis (long side, 30mm) perpendicular to gripper Y-axis
+        # Align object's Y-axis with gripper's Z-axis (perpendicular to opening)
+
+        # Object orientation: rotate to align object Y with gripper Z
+        # Gripper frame: X=forward, Y=opening, Z=perpendicular
+        # Object frame: X=7mm, Y=15mm (long), Z=5mm
+        # Desired: object Y || gripper Z, object Z || gripper X (forward)
+        object_orientation_mat = np.zeros((3, 3))
+        object_orientation_mat[:, 0] = gripperframe_orientation_mat[:, 1]  # object X = gripper Y
+        object_orientation_mat[:, 1] = gripperframe_orientation_mat[:, 2]  # object Y = gripper Z (long side perpendicular)
+        object_orientation_mat[:, 2] = gripperframe_orientation_mat[:, 0]  # object Z = gripper X
+
+        object_orientation_quat = np.empty(4)
+        mujoco.mju_mat2Quat(object_orientation_quat, object_orientation_mat.flatten())
+
+        print(f"Object orientation set: long side perpendicular to jaw opening")
+
     except KeyError:
         print(f"Error: Site '{gripper_site_name}' not found in the robot XML.")
         return None, None
 
-    return gripper_position, gripper_orientation_quat
+    return object_position, object_orientation_quat

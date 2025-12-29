@@ -85,8 +85,8 @@ def parse_arguments():
     parser.add_argument(
         "--object-name",
         type=str,
-        default="object_to_grasp",
-        help="Name of the object's body/joint in the XML file.",
+        default="object1_to_world",
+        help="Name of the object's joint in the XML file (e.g., 'object1_to_world' or 'object2_to_world').",
     )
     parser.add_argument(
         "--video-folder",
