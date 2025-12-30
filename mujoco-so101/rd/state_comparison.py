@@ -49,14 +49,13 @@ def validate_episode_data(episode, env):
 
         if num_states < num_actions:
             print(f"Error: Not enough states ({num_states}) for the number of actions ({num_actions})")
-            print("Expected at least as many states as actions.")
+            print("Expected exactly as many states as actions (state[i] is result of action[i]).")
             return None, None, False
         elif num_states == num_actions:
-            print(f"Warning: States and actions have the same length ({num_actions})")
-            print("State comparison for the last action will not be available.")
-        elif num_states > num_actions + 1:
-            print(f"Warning: More states ({num_states}) than expected for {num_actions} actions")
-            print(f"Expected {num_actions} or {num_actions + 1} states.")
+            print(f"States and actions have matching length ({num_actions})")
+        elif num_states > num_actions:
+            print(f"Warning: More states ({num_states}) than actions ({num_actions})")
+            print(f"Only the first {num_actions} states will be used for comparison.")
 
     return actions, num_joints, True
 
@@ -140,11 +139,11 @@ def print_detailed_state_comparison(i, action, expected_state_deg, simulated_sta
     print(f"  {action}")
 
     # Print expected state from dataset
-    print(f"\nExpected state [timestep {i+1}] from dataset (degrees):")
+    print(f"\nExpected state [timestep {i}] from dataset (degrees):")
     print(f"  {expected_state_deg}")
 
     # Print actual simulated state
-    print(f"\nActual MuJoCo state [timestep {i+1}] (degrees):")
+    print(f"\nActual MuJoCo state [timestep {i}] (degrees):")
     print(f"  {simulated_state_deg}")
 
     # Print per-joint differences

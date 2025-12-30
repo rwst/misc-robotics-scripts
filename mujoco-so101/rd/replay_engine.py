@@ -164,13 +164,13 @@ def replay_actions_loop(env, episode, actions, num_joints, args, compare_all_sta
                     print(f"\rExecuting action {i+1}/{len(actions)}... WARNING: timed out after {max_steps_per_move} steps (norm={norm:.6f}).                    ", end='', flush=True)
 
         # Compare simulated state with dataset state
-        if episode["observation.state"] is not None and i + 1 < len(episode["observation.state"]):
+        if episode["observation.state"] is not None and i < len(episode["observation.state"]):
             # Get current simulated state (convert from radians to degrees)
             simulated_state_rad = observation[:num_joints]
             simulated_state_deg = np.rad2deg(simulated_state_rad)
 
-            # Get expected state from dataset (next timestep)
-            expected_state_deg = episode["observation.state"][i + 1]
+            # Get expected state from dataset (same timestep as action)
+            expected_state_deg = episode["observation.state"][i]
 
             # Detailed comparison for specific timestep
             if compare_specific_timestep is not None and i == compare_specific_timestep:
@@ -196,7 +196,7 @@ def replay_actions_loop(env, episode, actions, num_joints, args, compare_all_sta
                 })
 
                 if args.verbosity > 0:
-                    print(f"\n  State comparison [timestep {i}→{i+1}]: MAE={mae:.4f}°, RMSE={rmse:.4f}°, Max={max_error:.4f}° (joint {np.argmax(absolute_errors)})")
+                    print(f"\n  State comparison [action {i} → state {i}]: MAE={mae:.4f}°, RMSE={rmse:.4f}°, Max={max_error:.4f}° (joint {np.argmax(absolute_errors)})")
 
         if terminated or truncated:
             print("\n\nReplay finished due to episode termination.")

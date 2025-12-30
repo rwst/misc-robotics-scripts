@@ -5,13 +5,6 @@ Analysis of: `mujoco-so101/rd/replay_dataset.py`
 
 ## Critical Issues
 
-### 1. Hardcoded Object Z-Height
-**Lines: 334, 387**
-- Z-height is hardcoded to 0.025m for all objects
-- Uses `args.object_name` but assumes all objects have the same height
-- **Fix**: Add `--object-height` argument or infer from XML model
-- **Impact**: Incorrect object placement for objects with different heights
-
 ### 2. Action Scaling Assumption
 **Line: 452**
 - Assumes all LeRobot dataset actions are in degrees: `scaled_action = np.deg2rad(action)`
@@ -76,12 +69,12 @@ Analysis of: `mujoco-so101/rd/replay_dataset.py`
 
 ## Missing Features / Enhancements
 
-### 13. Dataset Convention Not Verified
+### 13. Dataset Convention Updated
 **Lines: 449-504**
-- Assumes state[i+1] is result of action[i]
-- No verification this matches the actual dataset convention
-- **Fix**: Add assertion or documentation of convention, verify with dataset metadata
-- **Impact**: Incorrect state comparisons if convention differs
+- Now assumes state[i] is result of action[i]
+- Changed from previous convention where state[i+1] was result of action[i]
+- Validation updated to expect equal number of states and actions
+- **Impact**: State comparisons now use same-index pairing (action[i] → state[i])
 
 ### 14. Fixed-Step Mode Has No Validation
 **Lines: 454-467**
@@ -186,7 +179,6 @@ Analysis of: `mujoco-so101/rd/replay_dataset.py`
 
 ## Recommended Refactoring Approach
 
-3. Add unit tests (Issue #27) - validates fixes
 4. Fix critical assumptions (Issues #1, #2, #3) - prevents wrong behavior
 5. Add proper error handling (Issue #5) - prevents resource leaks
 6. Address code quality issues (Issues #10, #11, #19, #20, #21)
