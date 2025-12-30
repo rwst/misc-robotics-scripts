@@ -10,6 +10,8 @@ This script replays robot actions in a MuJoCo simulation environment, with suppo
 """
 
 import argparse
+import mujoco
+import numpy as np
 from pathlib import Path
 
 from data_loader import validate_input_args, load_episode_data
@@ -79,8 +81,8 @@ def parse_arguments():
     parser.add_argument(
         "--env-xml-file",
         type=str,
-        default="so101-assets/so101_with_objects.xml",
-        help="Path to the MuJoCo XML file for the environment with objects.",
+        default="so101-assets/so101_new_calib_black.xml",
+        help="Path to the MuJoCo XML file for the environment. Use so101_new_calib_black.xml (default, no objects) for accurate replay, or so101_with_objects.xml for visualization with objects.",
     )
     parser.add_argument(
         "--object-name",
@@ -172,7 +174,21 @@ def main():
 
     # 7. Reset environment and place object
     env.reset()
+
+    # CRITICAL: Set initial robot state from episode data BEFORE replaying actions
+    # Without this, the robot starts from neutral pose [0,0,0,0,0,0] instead of
+    # the actual starting pose from the dataset, causing large errors
+    # IMPORTANT: Use env.unwrapped to bypass any wrappers and access the actual MuJoCo env
+    if episode["observation.state"] is not None:
+        initial_robot_qpos = np.deg2rad(episode["observation.state"][0])
+        env.unwrapped.data.qpos[: len(initial_robot_qpos)] = initial_robot_qpos
+        env.unwrapped.data.qvel[:] = 0  # Zero out all velocities
+
+    # Place object AFTER setting robot state (to avoid overwriting robot qpos)
     place_object_in_scene(env.unwrapped.data, qpos_addr, gripper_position, gripper_orientation_quat, args.object_name, env.unwrapped.model)
+
+    # Update physics to reflect the new state
+    mujoco.mj_forward(env.unwrapped.model, env.unwrapped.data)
 
     # 8. Validate episode data
     actions, num_joints, valid = validate_episode_data(episode, env)
@@ -186,6 +202,13 @@ def main():
         env.close()
         return
     compare_all_states, compare_specific_timestep, state_errors, fk_model, fk_data = result
+
+    # DEBUG: Print current state before replay
+    print(f"\nDEBUG: State just before replay_actions_loop:")
+    print(f"  env.unwrapped.data.qpos[:6] (deg) = {np.rad2deg(env.unwrapped.data.qpos[:6])}")
+    print(f"  Expected initial state  = {episode['observation.state'][0]}")
+    print(f"  Match: {np.allclose(np.rad2deg(env.unwrapped.data.qpos[:6]), episode['observation.state'][0], atol=0.01)}")
+    print()
 
     # 10. Replay actions
     replay_success = replay_actions_loop(
