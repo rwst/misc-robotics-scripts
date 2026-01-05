@@ -18,10 +18,12 @@
 
   <worldbody>
     <!-- Placeholder for SO101 robot base (expand with included file) -->
+    <!-- DISABLED: This duplicate base was causing physics conflicts with the robot's actual base
     <body name="so101_base" pos="0 0 0.02">
       <geom type="box" size="0.05 0.05 0.05" name="so101_base_visual_geom" contype="1" conaffinity="1" rgba="0 0 0 0"/>
       <inertial pos="0 0 0" mass="1.0" diaginertia="0.1 0.1 0.1"/>
     </body>
+    -->
 
     <!-- Table -->
     <body name="table" pos="0.9 0.5 0">
