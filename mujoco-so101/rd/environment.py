@@ -210,7 +210,11 @@ def place_object_in_scene(env_data, qpos_addr, gripper_position, gripper_orienta
 
     env_data.qpos[qpos_addr : qpos_addr + 3] = object_position
     env_data.qpos[qpos_addr + 3 : qpos_addr + 7] = gripper_orientation_quat
-    print(f"Placed object '{object_name}' at position: ({object_position[0]:.3f}, {object_position[1]:.3f}, {object_position[2]:.3f})")
-    print(f"  (original gripper z was: {gripper_position[2]:.3f})")
+
+    print(f"[PLACEMENT DEBUG] Input gripper_position (before z correction): ({gripper_position[0]:.3f}, {gripper_position[1]:.3f}, {gripper_position[2]:.3f})")
+    print(f"[PLACEMENT DEBUG] Final object_position (after z correction): ({object_position[0]:.3f}, {object_position[1]:.3f}, {object_position[2]:.3f})")
+    print(f"[PLACEMENT DEBUG] Z-correction applied: {gripper_position[2]:.3f} → {object_position[2]:.3f}")
+    print(f"[PLACEMENT DEBUG] Object placed in qpos[{qpos_addr}:{qpos_addr+7}]")
+    print(f"[PLACEMENT DEBUG] Object orientation quat: {gripper_orientation_quat}")
     if hasattr(env_data, 'qpos'):
-        print(f"  qpos_addr: {qpos_addr}, total qpos size: {env_data.qpos.size}")
+        print(f"[PLACEMENT DEBUG] Total qpos size: {env_data.qpos.size}")

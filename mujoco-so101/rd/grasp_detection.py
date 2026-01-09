@@ -101,9 +101,12 @@ def detect_grasp_and_compute_object_pose(episode, args):
         # Compute object position at the center between jaws
         object_position = gripperframe_position + gripper_center_offset_world
 
-        print(f"Gripperframe position: {gripperframe_position}")
-        print(f"Gripper center offset (world): {gripper_center_offset_world}")
-        print(f"Estimated grasped object position (jaw center): {object_position}")
+        print(f"[FK DEBUG] Gripperframe position: {gripperframe_position}")
+        print(f"[FK DEBUG] GRIPPER_CENTER_OFFSET (local): {GRIPPER_CENTER_OFFSET}")
+        print(f"[FK DEBUG] Gripper center offset (world): {gripper_center_offset_world}")
+        print(f"[FK DEBUG] Offset magnitude: {np.linalg.norm(gripper_center_offset_world)*1000:.2f}mm (should be ~88.8mm)")
+        print(f"[FK DEBUG] Estimated grasped object position (jaw center): {object_position}")
+        print(f"[FK DEBUG] Distance from gripperframe to object: {np.linalg.norm(object_position - gripperframe_position)*1000:.2f}mm")
 
         # Compute object orientation
         # The object's long axis should be perpendicular to the jaw opening direction

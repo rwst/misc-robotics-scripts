@@ -154,6 +154,13 @@ def main():
 
     # 3. Detect grasp and compute object pose
     gripper_position, gripper_orientation_quat = detect_grasp_and_compute_object_pose(episode, args)
+
+    # DEBUG: Log what was returned from grasp detection
+    if gripper_position is not None:
+        print(f"[MAIN DEBUG] Returned from detect_grasp_and_compute_object_pose:")
+        print(f"[MAIN DEBUG]   gripper_position = {gripper_position}")
+        print(f"[MAIN DEBUG]   gripper_orientation_quat = {gripper_orientation_quat}")
+
     if gripper_position is None and gripper_orientation_quat is None and not args.skip_object_placement:
         # Error occurred during grasp detection (not just skipped)
         if episode["observation.state"] is not None and not args.manual_object_position:
@@ -185,6 +192,9 @@ def main():
         env.unwrapped.data.qvel[:] = 0  # Zero out all velocities
 
     # Place object AFTER setting robot state (to avoid overwriting robot qpos)
+    print(f"[MAIN DEBUG] About to call place_object_in_scene with:")
+    print(f"[MAIN DEBUG]   gripper_position = {gripper_position}")
+    print(f"[MAIN DEBUG]   gripper_orientation_quat = {gripper_orientation_quat}")
     place_object_in_scene(env.unwrapped.data, qpos_addr, gripper_position, gripper_orientation_quat, args.object_name, env.unwrapped.model)
 
     # Update physics to reflect the new state
