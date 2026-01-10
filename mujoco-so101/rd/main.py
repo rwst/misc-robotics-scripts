@@ -134,6 +134,18 @@ def parse_arguments():
         default=1,
         help="Verbosity level for action execution progress (0=off, 1=on). Default: 1.",
     )
+    parser.add_argument(
+        "--video-threads",
+        type=int,
+        default=4,
+        help="Number of threads for video encoding (default: 4).",
+    )
+    parser.add_argument(
+        "--keep-nth-video-frame",
+        type=int,
+        default=1,
+        help="Keep every Nth frame for video (1=all frames, 10=every 10th). Default: 1 (all frames).",
+    )
     return parser.parse_args()
 
 
@@ -176,8 +188,8 @@ def main():
         generate_start_image(env, episode, gripper_position, gripper_orientation_quat, qpos_addr, args)
         return
 
-    # 6. Setup video recording
-    env, video_name_prefix = setup_video_recording(env, args)
+    # 6. Setup video recording (returns encoder instead of wrapping env)
+    env, encoder, video_name = setup_video_recording(env, args)
 
     # 7. Reset environment and place object
     env.reset()
@@ -220,25 +232,27 @@ def main():
     print(f"  Match: {np.allclose(np.rad2deg(env.unwrapped.data.qpos[:6]), episode['observation.state'][0], atol=0.01)}")
     print()
 
-    # 10. Replay actions
+    # 10. Replay actions (pass encoder for video recording)
     replay_success = replay_actions_loop(
         env, episode, actions, num_joints, args,
         compare_all_states, compare_specific_timestep, state_errors,
-        fk_model, fk_data
+        fk_model, fk_data, encoder=encoder
     )
 
     # 11. Cleanup
-    if args.video:
-        print("\nWriting video...")
     env.close()
+    if encoder:
+        print("\nFinalizing video encoding...")
+        frame_count = encoder.close()
+        print(f"Video encoded: {frame_count} frames")
 
     # 12. Print state comparison summary
     if compare_all_states:
         print_state_comparison_summary(state_errors, num_joints)
 
     # 13. Final message
-    if args.video:
-        print(f"\n\nSimulation finished. Video saved in the '{args.video_folder}' directory with prefix '{video_name_prefix}'.")
+    if encoder:
+        print(f"\n\nSimulation finished. Video saved: {args.video_folder / video_name}")
     else:
         print("\n\nSimulation finished.")
 

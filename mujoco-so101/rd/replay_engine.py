@@ -6,9 +6,9 @@ import mujoco
 import numpy as np
 from pathlib import Path
 from PIL import Image
-from gymnasium.wrappers import RecordVideo
 
 from state_comparison import print_detailed_state_comparison
+from video_utils import FFmpegEncoder
 
 
 def generate_start_image(env, episode, gripper_position, gripper_orientation_quat, qpos_addr, args):
@@ -58,38 +58,48 @@ def generate_start_image(env, episode, gripper_position, gripper_orientation_qua
 
 def setup_video_recording(env, args):
     """
-    Wraps environment with RecordVideo if video recording is enabled.
+    Sets up video recording using FFmpeg encoder if enabled.
 
     Args:
         env: MuJoCo environment
         args: Command-line arguments
 
     Returns:
-        tuple: (wrapped_env, video_name_prefix)
+        tuple: (env, encoder, video_name) - encoder is None if video disabled
     """
     if not args.video:
         print("Video recording disabled.")
-        return env, None
+        return env, None, None
 
-    # Generate video name based on input source
+    # Generate video path based on input source
     if args.actions_npy_path:
         actions_basename = Path(args.actions_npy_path).stem
-        video_name_prefix = f"replay_{actions_basename}"
+        video_name = f"replay_{actions_basename}.mp4"
     else:
-        video_name_prefix = (
-            f"replay_{args.repo_id.replace('/', '_')}_ep{args.episode_index}"
-        )
+        video_name = f"replay_{args.repo_id.replace('/', '_')}_ep{args.episode_index}.mp4"
 
-    env = RecordVideo(env, str(args.video_folder), name_prefix=video_name_prefix)
-    print(f"Video recording enabled. Output will be saved with prefix '{video_name_prefix}'")
+    video_path = args.video_folder / video_name
+    args.video_folder.mkdir(parents=True, exist_ok=True)
 
-    return env, video_name_prefix
+    # Get frame dimensions from a test render
+    test_frame = env.render()
+    h, w = test_frame.shape[:2]
+
+    # Get encoding parameters from args
+    threads = getattr(args, 'video_threads', 4)
+
+    # Create encoder with multi-threaded FFmpeg
+    encoder = FFmpegEncoder(video_path, w, h, fps=30, threads=threads)
+
+    print(f"Video recording enabled: {video_path} (FFmpeg, {threads} threads)")
+    return env, encoder, video_name
 
 
 def replay_actions_loop(env, episode, actions, num_joints, args, compare_all_states,
-                       compare_specific_timestep, state_errors, fk_model, fk_data):
+                       compare_specific_timestep, state_errors, fk_model, fk_data,
+                       encoder=None):
     """
-    Main action replay loop with optional state comparison.
+    Main action replay loop with optional state comparison and video recording.
 
     Args:
         env: MuJoCo environment
@@ -102,12 +112,15 @@ def replay_actions_loop(env, episode, actions, num_joints, args, compare_all_sta
         state_errors: List to collect state errors
         fk_model: Forward kinematics model (or None)
         fk_data: Forward kinematics data (or None)
+        encoder: FFmpegEncoder instance for video recording (or None)
 
     Returns:
         bool: True if replay completed successfully, False if terminated early
     """
     max_steps_per_move = 500
     movement_epsilon = 1e-3
+    frame_skip = getattr(args, 'keep_nth_video_frame', 1)  # Default: keep all frames
+    global_step = 0
 
     # Print execution mode
     if args.fixed_steps:
@@ -127,6 +140,11 @@ def replay_actions_loop(env, episode, actions, num_joints, args, compare_all_sta
                     print(f"\rExecuting action {i+1}/{len(actions)}... (step {step + 1}/{args.fixed_steps})", end='', flush=True)
                 observation, reward, terminated, truncated, info = env.step(scaled_action)
 
+                # Capture frame for video (respecting frame_skip)
+                if encoder and global_step % frame_skip == 0:
+                    encoder.add_frame(env.render())
+                global_step += 1
+
                 if terminated or truncated:
                     if args.verbosity > 0:
                         print(f"\rExecuting action {i+1}/{len(actions)}... terminated/truncated at step {step + 1}.                    ", end='', flush=True)
@@ -143,6 +161,12 @@ def replay_actions_loop(env, episode, actions, num_joints, args, compare_all_sta
                     print(f"\rExecuting action {i+1}/{len(actions)}... (substep {step + 1}/{max_steps_per_move})", end='', flush=True)
 
                 observation, reward, terminated, truncated, info = env.step(scaled_action)
+
+                # Capture frame for video (respecting frame_skip)
+                if encoder and global_step % frame_skip == 0:
+                    encoder.add_frame(env.render())
+                global_step += 1
+
                 current_pos = observation[:num_joints]
 
                 # Check if the movement has stopped
